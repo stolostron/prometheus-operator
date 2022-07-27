@@ -165,10 +165,10 @@ image: .hack-operator-image .hack-prometheus-config-reloader-image
 .PHONY: update-go-deps
 update-go-deps:
 	for m in $$(go list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
-		go get $$m; \
+		go install $$m; \
 	done
-	(cd pkg/client && go get -u ./...)
-	(cd pkg/apis/monitoring && go get -u ./...)
+	(cd pkg/client && go install -u ./...)
+	(cd pkg/apis/monitoring && go install -u ./...)
 	@echo "Don't forget to run 'make tidy'"
 
 ##############
@@ -320,7 +320,7 @@ $(TOOLING): $(TOOLS_BIN_DIR)
 # INFORMER_GEN_BINARY=/home/user/go/bin/informer-gen
 #
 # /home/user/go/bin/informer-gen:
-#	go get -u -d k8s.io/code-generator/cmd/informer-gen
+#	go install -u -d k8s.io/code-generator/cmd/informer-gen
 #	cd /home/user/go/src/k8s.io/code-generator; git checkout release-1.14
 #	go install k8s.io/code-generator/cmd/informer-gen
 #
