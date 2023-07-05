@@ -9,7 +9,7 @@ export GOPROXY
 all: container push
 
 build:
-	@GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -mod=vendor -o instrumented-sample-app main.go
+	@GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -mod=vendor -o instrumented-sample-app main.go
 
 container:
 	@docker build -t $(REG)/$(APP):$(VERSION) --file Dockerfile ../../
