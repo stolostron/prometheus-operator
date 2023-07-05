@@ -70,7 +70,7 @@ GO_BUILD_LDFLAGS=\
 GO_BUILD_RECIPE=\
 	GOOS=$(GOOS) \
 	GOARCH=$(GOARCH) \
-	CGO_ENABLED=0 \
+	CGO_ENABLED=1 \
 	go build -ldflags="$(GO_BUILD_LDFLAGS)"
 
 pkgs = $(shell go list ./... | grep -v /test/ | grep -v /contrib/)
