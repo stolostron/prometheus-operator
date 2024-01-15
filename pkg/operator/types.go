@@ -15,9 +15,10 @@
 package operator
 
 import (
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func MakeVolumeClaimTemplate(e monitoringv1.EmbeddedPersistentVolumeClaim) *v1.PersistentVolumeClaim {
@@ -35,4 +36,20 @@ func MakeVolumeClaimTemplate(e monitoringv1.EmbeddedPersistentVolumeClaim) *v1.P
 		Status: e.Status,
 	}
 	return &pvc
+}
+
+// MakeHostAliases converts array of monitoringv1 HostAlias to array of corev1 HostAlias
+func MakeHostAliases(input []monitoringv1.HostAlias) []v1.HostAlias {
+	if len(input) == 0 {
+		return nil
+	}
+
+	output := make([]v1.HostAlias, len(input))
+
+	for i, in := range input {
+		output[i].Hostnames = in.Hostnames
+		output[i].IP = in.IP
+	}
+
+	return output
 }

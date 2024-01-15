@@ -27,6 +27,21 @@ This document tracks people and use cases for the Prometheus Operator in product
 
 Go ahead and [add your organization](https://github.com/prometheus-operator/prometheus-operator/edit/main/ADOPTERS.md) to the list.
 
+## CERN
+
+[European Laboratory for Particle Physics](https://home.cern/)
+
+Environments: On-premises
+
+Prometheus is used extensively as part of the CERN Kubernetes infrastructure,
+both managed and unmanaged. Metrics deployment is managed by the community owned
+__kube-prometheus-stack__ helm chart. Be sure to check our [blog](https://kubernetes.web.cern.ch/).
+
+Details:
+- 400+ Kubernetes clusters, with cluster sizes ranging from few nodes to ~100s
+
+Significant usage also exists outside Kubernetes for generic service and infrastructure monitoring.
+
 ## Clyso
 
 [clyso.com](https://www.clyso.com/en)
@@ -55,6 +70,29 @@ Details:
 - Loose coupling between Kubernetes cluster administrators who manage alerting sinks and service owners who define alerts for their services
 - 800K samples/s
 - 30M active series
+
+## Deckhouse
+
+[deckhouse.io](https://deckhouse.io/)
+
+Environments: AWS, Azure, Google Cloud, Bare Metal
+
+Uses [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus): Yes
+
+Deckhouse is a Kubernetes Platform. Its clusters running on any infrastructure are provided with the monitoring system based on highly available Prometheus and Prometheus Operator. Essential metrics are preconfigured out-of-the-box to ensure monitoring of all levels, from hardware and Kubernetes internals to the platform’s modules functionality. The monitoring-custom module simplifies adding custom metrics for user applications. Deckhouse also hosts a dedicated Prometheus instance in each cluster to store downsampled metric series for longer periods.
+
+## Deezer
+
+[deezer.com](https://www.deezer.com)
+
+Environments: Bare Metal
+
+Uses [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus): Yes
+
+Details (optional):
+- HA Pair of Prometheus
+- 340000 samples/s
+- 14.3M active series
 
 ## Giant Swarm
 
@@ -111,7 +149,7 @@ Details:
 
 ## Lunar
 
-[lunar.app](https://lunar.app/)
+[lunar.app](https://www.lunar.app/)
 
 Environments: AWS
 
@@ -171,7 +209,7 @@ Opstrace installations use the Prometheus Operator internally to collect metrics
 
 ## Polar Signals
 
-[polarsignals.com](https://polarsignals.com/)
+[polarsignals.com](https://www.polarsignals.com/)
 
 Environment: Google Cloud
 
@@ -181,6 +219,26 @@ Details:
 - HA Pair of Prometheus
 - 4000 samples/s
 - 100k active series
+
+## Robusta
+
+[Robusta docs](https://docs.robusta.dev/master/)
+
+Environments: EKS, GKE, AKS, and self-hosted Kubernetes
+
+Uses [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus): Yes
+
+We're an open source project that builds upon the awesome Prometheus Operator. We run automated playbooks in response to Prometheus alerts and other events in your cluster. For example, you can automatically fetch logs and send them to Slack when a Prometheus alert occurs. All it takes is this YAML:
+
+```yaml
+triggers:
+  - on_prometheus_alert:
+      alert_name: KubePodCrashLooping
+actions:
+  - logs_enricher: {}
+sinks:
+  - slack
+```
 
 ## Skyscanner
 
@@ -211,6 +269,21 @@ For more information, please see [how Rancher monitoring works](https://rancher.
 
 The open-source rancher-monitoring Helm chart (based on [kube-prometheus-stack](https://github.com/prometheus-community/helm-charts/tree/main/charts/kube-prometheus-stack)) can be found at [rancher/charts](https://github.com/rancher/charts).
 
+## Trendyol
+
+[trendyol.com](https://trendyol.com)
+
+Environments: OpenStack, VMware vCloud
+
+Uses [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus): Yes
+
+Details:
+- All Kubernetes clusters use one Prometheus Operator instance with remote write enabled
+- Prometheus instances push metrics to central H/A VirtualMetric, which gathers all data from clusters in 3 different data centers
+- Grafana is used for dashboarding and visualization
+- 7.50M samples/s
+- 190M active series
+
 ## Veepee
 
 [veepee.com](https://www.veepee.com)
@@ -221,8 +294,8 @@ Uses [kube-prometheus](https://github.com/prometheus-operator/kube-prometheus): 
 
 Details (optional):
 - HA Pair of Prometheus
-- 517000 samples/s
-- 10.7M active series
+- 786000 samples/s
+- 23.6M active series
 
 ## VSHN AG
 

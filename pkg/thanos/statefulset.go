@@ -20,19 +20,22 @@ import (
 	"path"
 	"strings"
 
+	"github.com/blang/semver/v4"
 	"github.com/pkg/errors"
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
-	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
-	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
+	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 )
 
 const (
 	rulesDir                  = "/etc/thanos/rules"
+	configDir                 = "/etc/thanos/config"
 	storageDir                = "/thanos/data"
 	governingServiceName      = "thanos-ruler-operated"
 	defaultPortName           = "web"
@@ -77,8 +80,8 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 	statefulset := &appsv1.StatefulSet{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        prefixedName(tr.Name),
+			Annotations: config.Annotations.Merge(annotations),
 			Labels:      config.Labels.Merge(tr.ObjectMeta.Labels),
-			Annotations: annotations,
 			OwnerReferences: []metav1.OwnerReference{
 				{
 					APIVersion:         tr.APIVersion,
@@ -150,18 +153,20 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 }
 
 func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string) (*appsv1.StatefulSetSpec, error) {
-	// Before editing 'tr' create deep copy, to prevent side effects. For more
-	// details see https://github.com/prometheus-operator/prometheus-operator/issues/1659
-	tr = tr.DeepCopy()
-
 	if tr.Spec.QueryConfig == nil && len(tr.Spec.QueryEndpoints) < 1 {
 		return nil, errors.New(tr.GetName() + ": thanos ruler requires query config or at least one query endpoint to be specified")
+	}
+
+	thanosVersion := operator.StringValOrDefault(tr.Spec.Version, operator.DefaultThanosVersion)
+	if _, err := semver.ParseTolerant(thanosVersion); err != nil {
+		return nil, errors.Wrap(err, "failed to parse Thanos version")
+
 	}
 
 	trImagePath, err := operator.BuildImagePath(
 		tr.Spec.Image,
 		operator.StringValOrDefault(config.ThanosDefaultBaseImage, operator.DefaultThanosBaseImage),
-		operator.DefaultThanosVersion,
+		thanosVersion,
 		"",
 		"",
 	)
@@ -169,32 +174,12 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		return nil, errors.Wrap(err, "failed to build image path")
 	}
 
-	if tr.Spec.EvaluationInterval == "" {
-		tr.Spec.EvaluationInterval = defaultEvaluationInterval
+	trCLIArgs := []monitoringv1.Argument{
+		{Name: "data-dir", Value: storageDir},
+		{Name: "eval-interval", Value: string(tr.Spec.EvaluationInterval)},
+		{Name: "tsdb.retention", Value: string(tr.Spec.Retention)},
 	}
 
-	if tr.Spec.EvaluationInterval != "" {
-		if err := operator.ValidateDurationField(tr.Spec.EvaluationInterval); err != nil {
-			return nil, errors.Wrap(err, "invalid evaluationInterval value specified")
-		}
-	}
-
-	if tr.Spec.Retention == "" {
-		tr.Spec.Retention = defaultRetention
-	}
-
-	if tr.Spec.Retention != "" {
-		if err := operator.ValidateDurationField(tr.Spec.Retention); err != nil {
-			return nil, errors.Wrap(err, "invalid retention value specified")
-		}
-	}
-
-	trCLIArgs := []string{
-		"rule",
-		fmt.Sprintf("--data-dir=%s", storageDir),
-		fmt.Sprintf("--eval-interval=%s", tr.Spec.EvaluationInterval),
-		fmt.Sprintf("--tsdb.retention=%s", tr.Spec.Retention),
-	}
 	trEnvVars := []v1.EnvVar{
 		{
 			Name: "POD_NAME",
@@ -204,14 +189,18 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		},
 	}
 
-	trCLIArgs = append(trCLIArgs, fmt.Sprintf(`--label=%s="$(POD_NAME)"`, defaultReplicaLabelName))
-	for k, v := range tr.Spec.Labels {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf(`--label=%s="%s"`, k, v))
+	trVolumes := []v1.Volume{}
+	trVolumeMounts := []v1.VolumeMount{}
+
+	trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "label", Value: fmt.Sprintf(`%s="$(POD_NAME)"`, defaultReplicaLabelName)})
+	labels := operator.Map(tr.Spec.Labels)
+	for _, k := range labels.SortedKeys() {
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "label", Value: fmt.Sprintf(`%s="%s"`, k, labels[k])})
 	}
 
-	trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alert.label-drop=%s", defaultReplicaLabelName))
+	trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.label-drop", Value: defaultReplicaLabelName})
 	for _, lb := range tr.Spec.AlertDropLabels {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alert.label-drop=%s", lb))
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.label-drop", Value: lb})
 	}
 
 	ports := []v1.ContainerPort{
@@ -222,7 +211,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		},
 	}
 	if tr.Spec.ListenLocal {
-		trCLIArgs = append(trCLIArgs, "--http-address=localhost:10902")
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "http-address", Value: "localhost:10902"})
 	} else {
 		ports = append(ports,
 			v1.ContainerPort{
@@ -233,101 +222,86 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 	}
 
 	if tr.Spec.LogLevel != "" && tr.Spec.LogLevel != "info" {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--log.level=%s", tr.Spec.LogLevel))
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "log.level", Value: tr.Spec.LogLevel})
 	}
 	if tr.Spec.LogFormat != "" {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--log.format=%s", tr.Spec.LogFormat))
-	}
-
-	if tr.Spec.QueryConfig != nil {
-		trCLIArgs = append(trCLIArgs, "--query.config=$(QUERY_CONFIG)")
-		trEnvVars = append(trEnvVars, v1.EnvVar{
-			Name: "QUERY_CONFIG",
-			ValueFrom: &v1.EnvVarSource{
-				SecretKeyRef: tr.Spec.QueryConfig,
-			},
-		})
-	} else if len(tr.Spec.QueryEndpoints) > 0 {
-		for _, endpoint := range tr.Spec.QueryEndpoints {
-			trCLIArgs = append(trCLIArgs, fmt.Sprintf("--query=%s", endpoint))
-		}
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "log.format", Value: tr.Spec.LogFormat})
 	}
 
 	rulePath := rulesDir + "/*/*.yaml"
-	trCLIArgs = append(trCLIArgs, fmt.Sprintf("--rule-file=%s", rulePath))
+	trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "rule-file", Value: rulePath})
+
+	if tr.Spec.QueryConfig != nil {
+		fullPath := mountSecret(tr.Spec.QueryConfig, "query-config", &trVolumes, &trVolumeMounts)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "query.config-file", Value: fullPath})
+	} else if len(tr.Spec.QueryEndpoints) > 0 {
+		for _, endpoint := range tr.Spec.QueryEndpoints {
+			trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "query", Value: endpoint})
+		}
+	}
 
 	if tr.Spec.AlertManagersConfig != nil {
-		trCLIArgs = append(trCLIArgs, "--alertmanagers.config=$(ALERTMANAGERS_CONFIG)")
-		trEnvVars = append(trEnvVars, v1.EnvVar{
-			Name: "ALERTMANAGERS_CONFIG",
-			ValueFrom: &v1.EnvVarSource{
-				SecretKeyRef: tr.Spec.AlertManagersConfig,
-			},
-		})
+		fullPath := mountSecret(tr.Spec.AlertManagersConfig, "alertmanager-config", &trVolumes, &trVolumeMounts)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alertmanagers.config-file", Value: fullPath})
 	} else if len(tr.Spec.AlertManagersURL) > 0 {
 		for _, url := range tr.Spec.AlertManagersURL {
-			trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alertmanagers.url=%s", url))
+			trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alertmanagers.url", Value: url})
 		}
 	}
 
 	if tr.Spec.ObjectStorageConfigFile != nil {
-		trCLIArgs = append(trCLIArgs, "--objstore.config-file="+*tr.Spec.ObjectStorageConfigFile)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "objstore.config-file", Value: *tr.Spec.ObjectStorageConfigFile})
 	} else if tr.Spec.ObjectStorageConfig != nil {
-		trCLIArgs = append(trCLIArgs, "--objstore.config=$(OBJSTORE_CONFIG)")
-		trEnvVars = append(trEnvVars, v1.EnvVar{
-			Name: "OBJSTORE_CONFIG",
-			ValueFrom: &v1.EnvVarSource{
-				SecretKeyRef: tr.Spec.ObjectStorageConfig,
-			},
-		})
+		fullPath := mountSecret(tr.Spec.ObjectStorageConfig, "objstorage-config", &trVolumes, &trVolumeMounts)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "objstore.config-file", Value: fullPath})
 	}
 
-	if tr.Spec.TracingConfig != nil {
-		trCLIArgs = append(trCLIArgs, "--tracing.config=$(TRACING_CONFIG)")
-		trEnvVars = append(trEnvVars, v1.EnvVar{
-			Name: "TRACING_CONFIG",
-			ValueFrom: &v1.EnvVarSource{
-				SecretKeyRef: tr.Spec.TracingConfig,
-			},
-		})
+	if tr.Spec.TracingConfigFile != "" {
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "tracing.config-file", Value: tr.Spec.TracingConfigFile})
+	} else if tr.Spec.TracingConfig != nil {
+		fullPath := mountSecret(tr.Spec.TracingConfig, "tracing-config", &trVolumes, &trVolumeMounts)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "tracing.config-file", Value: fullPath})
+	}
+
+	if tr.Spec.AlertRelabelConfigFile != nil {
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.relabel-config-file", Value: *tr.Spec.AlertRelabelConfigFile})
+	} else if tr.Spec.AlertRelabelConfigs != nil {
+		fullPath := mountSecret(tr.Spec.AlertRelabelConfigs, "alertrelabel-config", &trVolumes, &trVolumeMounts)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.relabel-config-file", Value: fullPath})
 	}
 
 	if tr.Spec.GRPCServerTLSConfig != nil {
 		tls := tr.Spec.GRPCServerTLSConfig
 		if tls.CertFile != "" {
-			trCLIArgs = append(trCLIArgs, "--grpc-server-tls-cert="+tls.CertFile)
+			trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "grpc-server-tls-cert", Value: tls.CertFile})
 		}
 		if tls.KeyFile != "" {
-			trCLIArgs = append(trCLIArgs, "--grpc-server-tls-key="+tls.KeyFile)
+			trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "grpc-server-tls-key", Value: tls.KeyFile})
 		}
 		if tls.CAFile != "" {
-			trCLIArgs = append(trCLIArgs, "--grpc-server-tls-client-ca="+tls.CAFile)
+			trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "grpc-server-tls-client-ca", Value: tls.CAFile})
 		}
 	}
 
 	if tr.Spec.ExternalPrefix != "" {
-		trCLIArgs = append(trCLIArgs, "--web.external-prefix="+tr.Spec.ExternalPrefix)
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "web.external-prefix", Value: tr.Spec.ExternalPrefix})
 	}
 
 	if tr.Spec.RoutePrefix != "" {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--web.route-prefix=%s", tr.Spec.RoutePrefix))
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "web.route-prefix", Value: tr.Spec.RoutePrefix})
 	}
 
 	if tr.Spec.AlertQueryURL != "" {
-		trCLIArgs = append(trCLIArgs, fmt.Sprintf("--alert.query-url=%s", tr.Spec.AlertQueryURL))
+		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.query-url", Value: tr.Spec.AlertQueryURL})
 	}
 
-	if tr.Spec.AlertRelabelConfigFile != nil {
-		trCLIArgs = append(trCLIArgs, "--alert.relabel-config-file="+*tr.Spec.AlertRelabelConfigFile)
-	} else if tr.Spec.AlertRelabelConfigs != nil {
-		trCLIArgs = append(trCLIArgs, "--alert.relabel-config=$(ALERT_RELABEL_CONFIG)")
-		trEnvVars = append(trEnvVars, v1.EnvVar{
-			Name: "ALERT_RELABEL_CONFIG",
-			ValueFrom: &v1.EnvVarSource{
-				SecretKeyRef: tr.Spec.AlertRelabelConfigs,
-			},
-		})
+	containerArgs, err := operator.BuildArgs(trCLIArgs, tr.Spec.AdditionalArgs)
+	if err != nil {
+		return nil, err
 	}
+
+	// The first argument to thanos must be "rule" to start thanos ruler, e.g. "thanos rule --data-dir..."
+	containerArgs = append([]string{"rule"}, containerArgs...)
 
 	var additionalContainers []v1.Container
 	if len(ruleConfigMapNames) != 0 {
@@ -349,7 +323,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 			additionalContainers,
 			operator.CreateConfigReloader(
 				"config-reloader",
-				operator.ReloaderResources(config.ReloaderConfig),
+				operator.ReloaderConfig(config.ReloaderConfig),
 				operator.ReloaderURL(url.URL{
 					Scheme: "http",
 					Host:   config.LocalHost + ":10902",
@@ -369,17 +343,17 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 	podAnnotations := map[string]string{}
 	podLabels := map[string]string{}
 	if tr.Spec.PodMetadata != nil {
-		if tr.Spec.PodMetadata.Labels != nil {
-			for k, v := range tr.Spec.PodMetadata.Labels {
-				podLabels[k] = v
-			}
+		for k, v := range tr.Spec.PodMetadata.Labels {
+			podLabels[k] = v
 		}
-		if tr.Spec.PodMetadata.Annotations != nil {
-			for k, v := range tr.Spec.PodMetadata.Annotations {
-				podAnnotations[k] = v
-			}
+		for k, v := range tr.Spec.PodMetadata.Annotations {
+			podAnnotations[k] = v
 		}
 	}
+	// In cases where an existing selector label is modified, or a new one is added, new sts cannot match existing pods.
+	// We should try to avoid removing such immutable fields whenever possible since doing
+	// so forces us to enter the 'recreate cycle' and can potentially lead to downtime.
+	// The requirement to make a change here should be carefully evaluated.
 	podLabels["app.kubernetes.io/name"] = thanosRulerLabel
 	podLabels["app.kubernetes.io/managed-by"] = "prometheus-operator"
 	podLabels["app.kubernetes.io/instance"] = tr.Name
@@ -394,13 +368,10 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 			storageVolName = tr.Spec.Storage.VolumeClaimTemplate.Name
 		}
 	}
-	trVolumes := []v1.Volume{}
-	trVolumeMounts := []v1.VolumeMount{
-		{
-			Name:      storageVolName,
-			MountPath: storageDir,
-		},
-	}
+	trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
+		Name:      storageVolName,
+		MountPath: storageDir,
+	})
 
 	for _, name := range ruleConfigMapNames {
 		trVolumes = append(trVolumes, v1.Volume{
@@ -419,16 +390,33 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		})
 	}
 
+	for _, thanosRulerVM := range tr.Spec.VolumeMounts {
+		trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
+			Name:      thanosRulerVM.Name,
+			MountPath: thanosRulerVM.MountPath,
+		})
+	}
+
+	boolFalse := false
+	boolTrue := true
 	operatorContainers := append([]v1.Container{
 		{
 			Name:                     "thanos-ruler",
 			Image:                    trImagePath,
-			Args:                     trCLIArgs,
+			ImagePullPolicy:          tr.Spec.ImagePullPolicy,
+			Args:                     containerArgs,
 			Env:                      trEnvVars,
 			VolumeMounts:             trVolumeMounts,
 			Resources:                tr.Spec.Resources,
 			Ports:                    ports,
 			TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
+			SecurityContext: &v1.SecurityContext{
+				AllowPrivilegeEscalation: &boolFalse,
+				ReadOnlyRootFilesystem:   &boolTrue,
+				Capabilities: &v1.Capabilities{
+					Drop: []v1.Capability{"ALL"},
+				},
+			},
 		},
 	}, additionalContainers...)
 
@@ -447,6 +435,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 	// PodManagementPolicy is set to Parallel to mitigate issues in kubernetes: https://github.com/kubernetes/kubernetes/issues/60164
 	// This is also mentioned as one of limitations of StatefulSets: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
 	return &appsv1.StatefulSetSpec{
+		ServiceName:         governingServiceName,
 		Replicas:            tr.Spec.Replicas,
 		MinReadySeconds:     minReadySeconds,
 		PodManagementPolicy: appsv1.ParallelPodManagement,
@@ -473,6 +462,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 				Tolerations:                   tr.Spec.Tolerations,
 				Affinity:                      tr.Spec.Affinity,
 				TopologySpreadConstraints:     tr.Spec.TopologySpreadConstraints,
+				HostAliases:                   operator.MakeHostAliases(tr.Spec.HostAliases),
 			},
 		},
 	}, nil
@@ -486,7 +476,8 @@ func makeStatefulSetService(tr *monitoringv1.ThanosRuler, config Config) *v1.Ser
 
 	svc := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
-			Name: governingServiceName,
+			Name:        governingServiceName,
+			Annotations: config.Annotations,
 			Labels: config.Labels.Merge(map[string]string{
 				"operated-thanos-ruler": "true",
 			}),
@@ -529,4 +520,28 @@ func prefixedName(name string) string {
 
 func volumeName(name string) string {
 	return fmt.Sprintf("%s-data", prefixedName(name))
+}
+
+func mountSecret(secretSelector *v1.SecretKeySelector, volumeName string, trVolumes *[]v1.Volume, trVolumeMounts *[]v1.VolumeMount) string {
+	path := secretSelector.Key
+	*trVolumes = append(*trVolumes, v1.Volume{
+		Name: volumeName,
+		VolumeSource: v1.VolumeSource{
+			Secret: &v1.SecretVolumeSource{
+				SecretName: secretSelector.Name,
+				Items: []v1.KeyToPath{
+					{
+						Key:  secretSelector.Key,
+						Path: path,
+					},
+				},
+			},
+		},
+	})
+	mountpath := configDir + "/" + volumeName
+	*trVolumeMounts = append(*trVolumeMounts, v1.VolumeMount{
+		Name:      volumeName,
+		MountPath: mountpath,
+	})
+	return mountpath + "/" + path
 }

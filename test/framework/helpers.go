@@ -17,19 +17,31 @@ package framework
 import (
 	"context"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
-	"k8s.io/api/core/v1"
+	"github.com/pkg/errors"
+	"github.com/prometheus/prometheus/model/labels"
+	"github.com/prometheus/prometheus/model/textparse"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 	"k8s.io/client-go/rest"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
 )
+
+func SourceToIOReader(source string) (io.Reader, error) {
+	if strings.HasPrefix(source, "http") {
+		return URLToIOReader(source)
+	} else {
+		return PathToOSFile(source)
+	}
+}
 
 func PathToOSFile(relativePath string) (*os.File, error) {
 	path, err := filepath.Abs(relativePath)
@@ -45,10 +57,34 @@ func PathToOSFile(relativePath string) (*os.File, error) {
 	return manifest, nil
 }
 
+func URLToIOReader(url string) (io.Reader, error) {
+	var resp *http.Response
+	timeout := 30 * time.Second
+
+	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(ctx context.Context) (bool, error) {
+		var err error
+		resp, err = http.Get(url)
+		if err == nil && resp.StatusCode == 200 {
+			return true, nil
+		}
+		return false, nil
+	})
+
+	if err != nil {
+		return nil, errors.Wrap(err, fmt.Sprintf(
+			"waiting for %v to return a successful status code timed out. Last response from server was: %v",
+			url,
+			resp,
+		))
+	}
+
+	return resp.Body, nil
+}
+
 // WaitForPodsReady waits for a selection of Pods to be running and each
 // container to pass its readiness check.
 func (f *Framework) WaitForPodsReady(ctx context.Context, namespace string, timeout time.Duration, expectedReplicas int, opts metav1.ListOptions) error {
-	return wait.Poll(time.Second, timeout, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, time.Second, timeout, false, func(ctx context.Context) (bool, error) {
 		pl, err := f.KubeClient.CoreV1().Pods(namespace).List(ctx, opts)
 		if err != nil {
 			return false, err
@@ -58,7 +94,7 @@ func (f *Framework) WaitForPodsReady(ctx context.Context, namespace string, time
 		for _, p := range pl.Items {
 			isRunningAndReady, err := k8sutil.PodRunningAndReady(p)
 			if err != nil {
-				return false, err
+				return false, nil
 			}
 
 			if isRunningAndReady {
@@ -74,7 +110,7 @@ func (f *Framework) WaitForPodsReady(ctx context.Context, namespace string, time
 }
 
 func (f *Framework) WaitForPodsRunImage(ctx context.Context, namespace string, expectedReplicas int, image string, opts metav1.ListOptions) error {
-	return wait.Poll(time.Second, time.Minute*5, func() (bool, error) {
+	return wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*5, false, func(ctx context.Context) (bool, error) {
 		pl, err := f.KubeClient.CoreV1().Pods(namespace).List(ctx, opts)
 		if err != nil {
 			return false, err
@@ -96,7 +132,7 @@ func (f *Framework) WaitForPodsRunImage(ctx context.Context, namespace string, e
 
 func WaitForHTTPSuccessStatusCode(timeout time.Duration, url string) error {
 	var resp *http.Response
-	err := wait.Poll(time.Second, timeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(ctx context.Context) (bool, error) {
 		var err error
 		resp, err = http.Get(url)
 		if err == nil && resp.StatusCode == 200 {
@@ -136,7 +172,13 @@ func (f *Framework) GetLogs(ctx context.Context, namespace string, podName, cont
 	return string(logs), err
 }
 
-func (f *Framework) ProxyGetPod(namespace, podName, path string) *rest.Request {
+// ProxyGetPod expects resourceName as "[protocol:]podName[:portNameOrNumber]".
+// protocol is optional and the valid values are "http" and "https".
+// Without specifying protocol, "http" will be used.
+// podName is mandatory.
+// portNameOrNumber is optional.
+// Without specifying portNameOrNumber, default port will be used.
+func (f *Framework) ProxyGetPod(namespace, resourceName, path string) *rest.Request {
 	return f.KubeClient.
 		CoreV1().
 		RESTClient().
@@ -144,11 +186,17 @@ func (f *Framework) ProxyGetPod(namespace, podName, path string) *rest.Request {
 		Namespace(namespace).
 		Resource("pods").
 		SubResource("proxy").
-		Name(podName).
+		Name(resourceName).
 		Suffix(path)
 }
 
-func (f *Framework) ProxyPostPod(namespace, podName, path, body string) *rest.Request {
+// ProxyPostPod expects resourceName as "[protocol:]podName[:portNameOrNumber]".
+// protocol is optional and the valid values are "http" and "https".
+// Without specifying protocol, "http" will be used.
+// podName is mandatory.
+// portNameOrNumber is optional.
+// Without specifying portNameOrNumber, default port will be used.
+func (f *Framework) ProxyPostPod(namespace, resourceName, path, body string) *rest.Request {
 	return f.KubeClient.
 		CoreV1().
 		RESTClient().
@@ -156,8 +204,48 @@ func (f *Framework) ProxyPostPod(namespace, podName, path, body string) *rest.Re
 		Namespace(namespace).
 		Resource("pods").
 		SubResource("proxy").
-		Name(podName).
+		Name(resourceName).
 		Suffix(path).
 		Body([]byte(body)).
 		SetHeader("Content-Type", "application/json")
+}
+
+// GetMetricVal get a particular metric value from a pod.
+// When portNumberOfName is "", default port will be used to access metrics endpoint.
+func (f *Framework) GetMetricVal(ctx context.Context, ns, podName, portNumberOrName, metricName string) (float64, error) {
+	resourceName := podName
+	if portNumberOrName != "" {
+		resourceName = fmt.Sprintf("%s:%s", podName, portNumberOrName)
+	}
+
+	request := f.ProxyGetPod(ns, resourceName, "/metrics")
+	resp, err := request.DoRaw(ctx)
+	if err != nil {
+		return 0, err
+	}
+
+	parser := textparse.NewPromParser(resp)
+	for {
+		entry, err := parser.Next()
+		if err != nil {
+			return 0, err
+		}
+		if entry == textparse.EntryInvalid {
+			return 0, fmt.Errorf("invalid prometheus metric entry")
+		}
+		if entry != textparse.EntrySeries {
+			continue
+		}
+
+		seriesLabels := labels.Labels{}
+		parser.Metric(&seriesLabels)
+
+		if seriesLabels.Get("__name__") != metricName {
+			continue
+		}
+
+		_, _, val := parser.Series()
+
+		return val, nil
+	}
 }

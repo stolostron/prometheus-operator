@@ -15,6 +15,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 
 	"github.com/prometheus-operator/prometheus-operator/pkg/versionutil"
@@ -28,11 +29,27 @@ func main() {
 	}
 
 	switch os.Args[1] {
-	case "api":
-		printAPIDocs(os.Args[2:])
 	case "compatibility":
-		printCompatMatrixDocs()
-	case "operator":
-		printOperatorDocs(os.Args[2:])
+		cm := getCompatibilityMatrix()
+		var (
+			opt   string
+			lines []string
+		)
+		if len(os.Args) > 2 {
+			opt = os.Args[2]
+		}
+		switch opt {
+		case "defaultAlertmanagerVersion":
+			lines = []string{cm.DefaultAlertmanager}
+		case "defaultPrometheusVersion":
+			lines = []string{cm.DefaultPrometheus}
+		case "defaultThanosVersion":
+			lines = []string{cm.DefaultThanos}
+		default:
+			lines = cm.PrometheusVersions
+		}
+		for _, s := range lines {
+			fmt.Printf("* %s\n", s)
+		}
 	}
 }

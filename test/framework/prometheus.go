@@ -25,16 +25,20 @@ import (
 	"testing"
 	"time"
 
+	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime/schema"
+	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/apimachinery/pkg/util/wait"
+	"k8s.io/utils/ptr"
 
-	"github.com/pkg/errors"
+	"github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
-	"github.com/prometheus-operator/prometheus-operator/pkg/prometheus"
+	prometheus "github.com/prometheus-operator/prometheus-operator/pkg/prometheus/server"
 )
 
 const (
@@ -58,7 +62,6 @@ type PromRemoteWriteTestConfig struct {
 	ClientKey          Key
 	ClientCert         Cert
 	CA                 Cert
-	ExpectedInLogs     string
 	InsecureSkipVerify bool
 	ShouldSuccess      bool
 }
@@ -71,27 +74,29 @@ func (f *Framework) MakeBasicPrometheus(ns, name, group string, replicas int32) 
 			Annotations: map[string]string{},
 		},
 		Spec: monitoringv1.PrometheusSpec{
-			Replicas: &replicas,
-			Version:  operator.DefaultPrometheusVersion,
-			ServiceMonitorSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"group": group,
+			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+				Replicas: &replicas,
+				Version:  operator.DefaultPrometheusVersion,
+				ServiceMonitorSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"group": group,
+					},
+				},
+				PodMonitorSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"group": group,
+					},
+				},
+				ServiceAccountName: "prometheus",
+				Resources: v1.ResourceRequirements{
+					Requests: v1.ResourceList{
+						v1.ResourceMemory: resource.MustParse("400Mi"),
+					},
 				},
 			},
-			PodMonitorSelector: &metav1.LabelSelector{
-				MatchLabels: map[string]string{
-					"group": group,
-				},
-			},
-			ServiceAccountName: "prometheus",
 			RuleSelector: &metav1.LabelSelector{
 				MatchLabels: map[string]string{
 					"role": "rulefile",
-				},
-			},
-			Resources: v1.ResourceRequirements{
-				Requests: v1.ResourceList{
-					v1.ResourceMemory: resource.MustParse("400Mi"),
 				},
 			},
 		},
@@ -160,6 +165,37 @@ func (f *Framework) AddRemoteWriteWithTLSToPrometheus(p *monitoringv1.Prometheus
 			p.Spec.RemoteWrite[0].TLSConfig.InsecureSkipVerify = true
 		}
 	}
+}
+
+func (f *Framework) AddRemoteReceiveWithWebTLSToPrometheus(p *monitoringv1.Prometheus, prwtc PromRemoteWriteTestConfig) {
+	p.Spec.EnableFeatures = []string{"remote-write-receiver"}
+
+	p.Spec.Web = &monitoringv1.PrometheusWebSpec{}
+	p.Spec.Web.TLSConfig = &monitoringv1.WebTLSConfig{
+		ClientCA: monitoringv1.SecretOrConfigMap{
+			Secret: &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: "server-tls-ca",
+				},
+				Key: "ca.pem",
+			},
+		},
+		Cert: monitoringv1.SecretOrConfigMap{
+			Secret: &v1.SecretKeySelector{
+				LocalObjectReference: v1.LocalObjectReference{
+					Name: "server-tls",
+				},
+				Key: "cert.pem",
+			},
+		},
+		KeySecret: v1.SecretKeySelector{
+			LocalObjectReference: v1.LocalObjectReference{
+				Name: "server-tls",
+			},
+			Key: "key.pem",
+		},
+		ClientAuthType: "VerifyClientCertIfGiven",
+	}
 
 }
 
@@ -191,8 +227,9 @@ func (f *Framework) MakeBasicServiceMonitor(name string) *monitoringv1.ServiceMo
 			},
 			Endpoints: []monitoringv1.Endpoint{
 				{
-					Port:     "web",
-					Interval: "30s",
+					Port:              "web",
+					Interval:          "30s",
+					BearerTokenSecret: &v1.SecretKeySelector{},
 				},
 			},
 		},
@@ -282,40 +319,90 @@ func (f *Framework) CreatePrometheusAndWaitUntilReady(ctx context.Context, ns st
 	return result, nil
 }
 
-func (f *Framework) UpdatePrometheusAndWaitUntilReady(ctx context.Context, ns string, p *monitoringv1.Prometheus) (*monitoringv1.Prometheus, error) {
-	result, err := f.MonClientV1.Prometheuses(ns).Update(ctx, p, metav1.UpdateOptions{})
+func (f *Framework) ScalePrometheusAndWaitUntilReady(ctx context.Context, name, ns string, replicas int32) (*monitoringv1.Prometheus, error) {
+	return f.PatchPrometheusAndWaitUntilReady(
+		ctx,
+		name,
+		ns,
+		monitoringv1.PrometheusSpec{
+			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+				Replicas: ptr.To(int32(replicas)),
+			},
+		},
+	)
+}
+
+func (f *Framework) PatchPrometheus(ctx context.Context, name, ns string, spec monitoringv1.PrometheusSpec) (*monitoringv1.Prometheus, error) {
+	b, err := json.Marshal(
+		&monitoringv1.Prometheus{
+			TypeMeta: metav1.TypeMeta{
+				Kind:       monitoringv1.PrometheusesKind,
+				APIVersion: schema.GroupVersion{Group: monitoring.GroupName, Version: monitoringv1.Version}.String(),
+			},
+			Spec: spec,
+		},
+	)
+	if err != nil {
+		return nil, errors.Wrap(err, "failed to marshal Prometheus spec")
+	}
+
+	p, err := f.MonClientV1.Prometheuses(ns).Patch(
+		ctx,
+		name,
+		types.ApplyPatchType,
+		b,
+		metav1.PatchOptions{
+			Force:        ptr.To(true),
+			FieldManager: "e2e-test",
+		},
+	)
+
 	if err != nil {
 		return nil, err
 	}
-	if err := f.WaitForPrometheusReady(ctx, result, 5*time.Minute); err != nil {
-		return nil, fmt.Errorf("failed to update %d Prometheus instances (%v): %v", p.Spec.Replicas, p.Name, err)
+
+	return p, nil
+}
+
+func (f *Framework) PatchPrometheusAndWaitUntilReady(ctx context.Context, name, ns string, spec monitoringv1.PrometheusSpec) (*monitoringv1.Prometheus, error) {
+	p, err := f.PatchPrometheus(ctx, name, ns, spec)
+	if err != nil {
+		return nil, errors.Wrapf(err, "failed to patch Prometheus %s/%s", ns, name)
 	}
 
-	return result, nil
+	if err := f.WaitForPrometheusReady(ctx, p, 5*time.Minute); err != nil {
+		return nil, err
+	}
+
+	return p, nil
 }
 
 func (f *Framework) WaitForPrometheusReady(ctx context.Context, p *monitoringv1.Prometheus, timeout time.Duration) error {
-	var pollErr error
+	expected := *p.Spec.Replicas
+	if p.Spec.Shards != nil && *p.Spec.Shards > 0 {
+		expected = expected * *p.Spec.Shards
+	}
 
-	err := wait.Poll(2*time.Second, timeout, func() (bool, error) {
-		st, _, pollErr := prometheus.Status(ctx, f.KubeClient, p)
+	if err := f.WaitForResourceAvailable(
+		ctx,
+		func(ctx context.Context) (resourceStatus, error) {
+			current, err := f.MonClientV1.Prometheuses(p.Namespace).Get(ctx, p.Name, metav1.GetOptions{})
+			if err != nil {
+				return resourceStatus{}, err
+			}
+			return resourceStatus{
+				expectedReplicas: expected,
+				generation:       current.Generation,
+				replicas:         current.Status.UpdatedReplicas,
+				conditions:       current.Status.Conditions,
+			}, nil
+		},
+		timeout,
+	); err != nil {
+		return errors.Wrapf(err, "prometheus %v/%v failed to become available", p.Namespace, p.Name)
+	}
 
-		if pollErr != nil {
-			return false, nil
-		}
-
-		shards := p.Spec.Shards
-		defaultShards := int32(1)
-		if shards == nil {
-			shards = &defaultShards
-		}
-		if st.UpdatedReplicas == (*p.Spec.Replicas * *shards) {
-			return true, nil
-		}
-
-		return false, nil
-	})
-	return errors.Wrapf(pollErr, "waiting for Prometheus %v/%v: %v", p.Namespace, p.Name, err)
+	return nil
 }
 
 func (f *Framework) DeletePrometheusAndWaitUntilGone(ctx context.Context, ns, name string) error {
@@ -365,7 +452,7 @@ func promImage(version string) string {
 func (f *Framework) WaitForActiveTargets(ctx context.Context, ns, svcName string, amount int) error {
 	var targets []*Target
 
-	if err := wait.Poll(time.Second, time.Minute*5, func() (bool, error) {
+	if err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*5, false, func(ctx context.Context) (bool, error) {
 		var err error
 		targets, err = f.GetActiveTargets(ctx, ns, svcName)
 		if err != nil {
@@ -387,22 +474,24 @@ func (f *Framework) WaitForActiveTargets(ctx context.Context, ns, svcName string
 // WaitForHealthyTargets waits for a number of targets to be configured and
 // healthy.
 func (f *Framework) WaitForHealthyTargets(ctx context.Context, ns, svcName string, amount int) error {
-	var targets []*Target
+	var loopErr error
 
-	if err := wait.Poll(time.Second, time.Minute*5, func() (bool, error) {
-		var err error
-		targets, err = f.GetHealthyTargets(ctx, ns, svcName)
-		if err != nil {
-			return false, err
+	err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*5, false, func(ctx context.Context) (bool, error) {
+		var targets []*Target
+		targets, loopErr = f.GetHealthyTargets(ctx, ns, svcName)
+		if loopErr != nil {
+			return false, nil
 		}
 
 		if len(targets) == amount {
 			return true, nil
 		}
 
+		loopErr = errors.Errorf("expected %d, found %d healthy targets", amount, len(targets))
 		return false, nil
-	}); err != nil {
-		return fmt.Errorf("waiting for healthy targets timed out. %v of %v healthy targets found. %v", len(targets), amount, err)
+	})
+	if err != nil {
+		return fmt.Errorf("waiting for healthy targets failed: %v: %v", err, loopErr)
 	}
 
 	return nil
@@ -411,7 +500,7 @@ func (f *Framework) WaitForHealthyTargets(ctx context.Context, ns, svcName strin
 func (f *Framework) WaitForDiscoveryWorking(ctx context.Context, ns, svcName, prometheusName string) error {
 	var loopErr error
 
-	err := wait.Poll(time.Second, 5*f.DefaultTimeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 5*f.DefaultTimeout, false, func(ctx context.Context) (bool, error) {
 		pods, loopErr := f.KubeClient.CoreV1().Pods(ns).List(ctx, prometheus.ListOptions(prometheusName))
 		if loopErr != nil {
 			return false, loopErr
@@ -450,7 +539,7 @@ func (f *Framework) WaitForDiscoveryWorking(ctx context.Context, ns, svcName, pr
 }
 
 func (f *Framework) basicQueryWorking(ctx context.Context, ns, svcName string) (bool, error) {
-	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "/api/v1/query", map[string]string{"query": "up"})
+	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "http", "/api/v1/query", map[string]string{"query": "up"})
 	if err != nil {
 		return false, err
 	}
@@ -488,14 +577,14 @@ func assertExpectedTargets(targets []*Target, expectedTargets []string) error {
 	return nil
 }
 
-func (f *Framework) PrometheusSVCGetRequest(ctx context.Context, ns, svcName, endpoint string, query map[string]string) ([]byte, error) {
+func (f *Framework) PrometheusSVCGetRequest(ctx context.Context, ns, svcName, scheme, endpoint string, query map[string]string) ([]byte, error) {
 	ProxyGet := f.KubeClient.CoreV1().Services(ns).ProxyGet
-	request := ProxyGet("", svcName, "web", endpoint, query)
+	request := ProxyGet(scheme, svcName, "web", endpoint, query)
 	return request.DoRaw(ctx)
 }
 
 func (f *Framework) GetActiveTargets(ctx context.Context, ns, svcName string) ([]*Target, error) {
-	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "/api/v1/targets", map[string]string{})
+	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "http", "/api/v1/targets", map[string]string{})
 	if err != nil {
 		return nil, err
 	}
@@ -528,13 +617,7 @@ func (f *Framework) GetHealthyTargets(ctx context.Context, ns, svcName string) (
 }
 
 func (f *Framework) CheckPrometheusFiringAlert(ctx context.Context, ns, svcName, alertName string) (bool, error) {
-	response, err := f.PrometheusSVCGetRequest(
-		ctx,
-		ns,
-		svcName,
-		"/api/v1/query",
-		map[string]string{"query": fmt.Sprintf(`ALERTS{alertname="%v",alertstate="firing"}`, alertName)},
-	)
+	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "http", "/api/v1/query", map[string]string{"query": fmt.Sprintf(`ALERTS{alertname="%v",alertstate="firing"}`, alertName)})
 	if err != nil {
 		return false, err
 	}
@@ -551,14 +634,8 @@ func (f *Framework) CheckPrometheusFiringAlert(ctx context.Context, ns, svcName,
 	return true, nil
 }
 
-func (f *Framework) PrometheusQuery(ns, svcName, query string) ([]PrometheusQueryResult, error) {
-	response, err := f.PrometheusSVCGetRequest(
-		context.Background(),
-		ns,
-		svcName,
-		"/api/v1/query",
-		map[string]string{"query": query},
-	)
+func (f *Framework) PrometheusQuery(ns, svcName, scheme, query string) ([]PrometheusQueryResult, error) {
+	response, err := f.PrometheusSVCGetRequest(context.Background(), ns, svcName, scheme, "/api/v1/query", map[string]string{"query": query})
 	if err != nil {
 		return nil, err
 	}
@@ -596,7 +673,7 @@ func (f *Framework) PrintPrometheusLogs(ctx context.Context, t *testing.T, p *mo
 func (f *Framework) WaitForPrometheusFiringAlert(ctx context.Context, ns, svcName, alertName string) error {
 	var loopError error
 
-	err := wait.Poll(time.Second, 5*f.DefaultTimeout, func() (bool, error) {
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 5*f.DefaultTimeout, false, func(ctx context.Context) (bool, error) {
 		var firing bool
 		firing, loopError = f.CheckPrometheusFiringAlert(ctx, ns, svcName, alertName)
 		return firing, nil

@@ -4,10 +4,6 @@
 [![Go Report Card](https://goreportcard.com/badge/prometheus-operator/prometheus-operator "Go Report Card")](https://goreportcard.com/report/prometheus-operator/prometheus-operator)
 [![Slack](https://img.shields.io/badge/join%20slack-%23prometheus--operator-brightgreen.svg)](http://slack.k8s.io/)
 
-**Project status: *beta*** Not all planned features are completed. The API, spec, status and other user facing objects may change, but in a backward compatible way.
-
-Note: Project was previously known as coreos/prometheus-operator.
-
 ## Overview
 
 The Prometheus Operator provides [Kubernetes](https://kubernetes.io/) native deployment and management of
@@ -26,6 +22,14 @@ The Prometheus operator includes, but is not limited to, the following features:
   on familiar Kubernetes label queries; no need to learn a Prometheus specific configuration language.
 
 For an introduction to the Prometheus Operator, see the [getting started](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/user-guides/getting-started.md) guide.
+
+## Project Status
+
+The operator in itself is considered to be production ready. Please refer to the Custom Resource Defintion (CRD) versions for the status of each CRD:
+
+* `monitoring.coreos.com/v1`: **stable** CRDs and API, changes are made in a backward-compatible way.
+* `monitoring.coreos.com/v1beta1`: **unstable** CRDs and API, changes can happen but the team is focused on avoiding them. We encourage usage in production for users that accept the risk of breaking changes.
+* `monitoring.coreos.com/v1alpha1`: **unstable** CRDs and API, changes can happen frequently, and we suggest avoiding its usage on mission-critical environments.
 
 ## Prometheus Operator vs. kube-prometheus vs. community helm chart
 
@@ -59,9 +63,11 @@ we recommend upgrading Kubernetes first and then the Prometheus Operator.
 
 A core feature of the Prometheus Operator is to monitor the Kubernetes API server for changes
 to specific objects and ensure that the current Prometheus deployments match these objects.
-The Operator acts on the following [custom resource definitions (CRDs)](https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/):
+The Operator acts on the following [Custom Resource Definitions (CRDs)](https://kubernetes.io/docs/tasks/access-kubernetes-api/extend-api-custom-resource-definitions/):
 
 * **`Prometheus`**, which defines a desired Prometheus deployment.
+
+* **`PrometheusAgent`**, which defines a desired Prometheus deployment, but running in Agent mode.
 
 * **`Alertmanager`**, which defines a desired Alertmanager deployment.
 
@@ -77,6 +83,8 @@ The Operator acts on the following [custom resource definitions (CRDs)](https://
   of ingresses or static targets should be monitored. The Operator automatically generates Prometheus scrape configuration
   based on the definition.
 
+* **`ScrapeConfig`**, which declaratively specifies scrape configurations to be added to Prometheus. This CustomResourceDefinition helps with scraping resources outside the Kubernetes cluster.
+
 * **`PrometheusRule`**, which defines a desired set of Prometheus alerting and/or recording rules.
   The Operator generates a rule file, which can be used by Prometheus instances.
 
@@ -87,9 +95,9 @@ The Prometheus operator automatically detects changes in the Kubernetes API serv
 matching deployments and configurations are kept in sync.
 
 To learn more about the CRDs introduced by the Prometheus Operator have a look
-at the [design doc](Documentation/design.md).
+at the [design](https://prometheus-operator.dev/docs/operator/design/) page.
 
-To automate validation of your CRD configuration files see about [linting](Documentation/user-guides/linting.md).
+To automate the validation of your CRD configuration files, see the [linting](Documentation/user-guides/linting.md) page.
 
 ## Dynamic Admission Control
 
@@ -97,7 +105,7 @@ To prevent invalid Prometheus alerting and recording rules from causing failures
 an [admission webhook](https://kubernetes.io/docs/reference/access-authn-authz/extensible-admission-controllers/)
 is provided to validate `PrometheusRule` resources upon initial creation or update.
 
-For more information on this feature, see the [user guide](Documentation/user-guides/webhook.md).
+For more information on this feature, see the [user guide](https://prometheus-operator.dev/docs/user-guides/webhook/).
 
 ## Quickstart
 
@@ -174,29 +182,42 @@ kubectl delete --ignore-not-found customresourcedefinitions \
 
 #### Running *end-to-end* tests on local kind cluster:
 
-1. `kind create cluster --image=kindest/node:<latest>`. e.g `v1.16.2` version.
+1. `kind create cluster --image=kindest/node:<latest>`. e.g `v1.23.0` version.
+
+> Note: In case you are running kind on MacOS using podman, it is recommended to create podman machine 4 CPUs and 8GiB memory.
+> Less resources might cause end to end tests fail because of lack of resources for cluster.
+>
+> `podman machine init --cpus=4 --memory=8192 --rootful --now`
+
 2. `kubectl cluster-info --context kind-kind`. kind version >= 0.6.x
 3. `make image` - build Prometheus Operator docker image locally.
-4. `for n in "operator" "config-reloader"; do kind load docker-image "quay.io/prometheus-operator/prometheus-$n:$(git rev-parse --short HEAD)"; done` - publish
-   built locally images to be accessible inside kind.
+
+> Note: In case you are running kind using podman, the step 3 won't work for you. You will need to switch command in Makefile:
+>
+> `CONTAINER_CLI=podman make image`
+
+4. publish locally built images to be accessible inside kind
+
+   ```bash
+   for n in "prometheus-operator" "prometheus-config-reloader" "admission-webhook"; do kind load docker-image "quay.io/prometheus-operator/$n:$(git rev-parse --short HEAD)"; done;
+   ```
+
+> Note: In case you are running kind using podman, docker-image command won't work. You need to use image archives instead:
+>
+> `for n in "prometheus-operator" "prometheus-config-reloader" "admission-webhook"; do podman save --quiet -o images/$n.tar "quay.io/prometheus-operator/$n:$(git rev-parse --short HEAD)"; kind load image-archive images/$n.tar; done`
+
 5. `make test-e2e`
 
 #### Running *end-to-end* tests on local minikube cluster:
 
-1. `minikube start --kubernetes-version=v1.10.0 --memory=4096 --extra-config=apiserver.authorization-mode=RBAC`
+1. `minikube start --kubernetes-version=stable --memory=4096 --extra-config=apiserver.authorization-mode=RBAC`
 2. `eval $(minikube docker-env) && make image` - build Prometheus Operator
    docker image on minikube's docker
 3. `make test-e2e`
 
 ## Contributing
 
-Many files (documentation, manifests, ...) in this repository are
-auto-generated. E.g. `bundle.yaml` originates from the *Jsonnet* files in
-`/jsonnet/prometheus-operator`. Before proposing a pull request:
-
-1. Commit your changes.
-2. Run `make generate`.
-3. Commit the generated changes.
+See [CONTRIBUTING](CONTRIBUTING.md).
 
 ## Security
 

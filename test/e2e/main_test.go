@@ -17,19 +17,24 @@ package e2e
 import (
 	"context"
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"os"
+	"strings"
 	"testing"
 
-	operatorFramework "github.com/prometheus-operator/prometheus-operator/test/framework"
-
+	"github.com/blang/semver/v4"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
+
+	operatorFramework "github.com/prometheus-operator/prometheus-operator/test/framework"
 )
 
 var (
-	framework *operatorFramework.Framework
-	opImage   *string
+	previousVersionFramework *operatorFramework.Framework
+	framework                *operatorFramework.Framework
+	opImage                  *string
 )
 
 func skipPrometheusAllNSTests(t *testing.T) {
@@ -56,7 +61,28 @@ func skipThanosRulerTests(t *testing.T) {
 	}
 }
 
+func skipOperatorUpgradeTests(t *testing.T) {
+	if os.Getenv("EXCLUDE_OPERATOR_UPGRADE_TESTS") != "" {
+		t.Skip("Skipping Operator upgrade tests")
+	}
+}
+
+func skipPromVersionUpgradeTests(t *testing.T) {
+	if os.Getenv("EXCLUDE_PROMETHEUS_UPGRADE_TESTS") != "" {
+		t.Skip("Skipping Prometheus Version upgrade tests")
+	}
+}
+
+func skipAllNSTests(t *testing.T) {
+	if os.Getenv("EXCLUDE_ALL_NS_TESTS") != "" {
+		t.Skip("Skipping AllNS upgrade tests")
+	}
+}
+
 // feature gated tests need to be explicitly included
+// not currently in use
+//
+// nolint:all
 func runFeatureGatedTests(t *testing.T) {
 	if os.Getenv("FEATURE_GATED_TESTS") != "include" {
 		t.Skip("Skipping Feature Gated tests")
@@ -81,8 +107,60 @@ func TestMain(m *testing.M) {
 		exitCode int
 	)
 
-	if framework, err = operatorFramework.New(*kubeconfig, *opImage); err != nil {
-		log.Printf("failed to setup framework: %v\n", err)
+	logger := log.New(os.Stdout, "", log.Lshortfile)
+
+	currentVersion, err := os.ReadFile("../../VERSION")
+	if err != nil {
+		logger.Printf("failed to read version file: %v\n", err)
+		os.Exit(1)
+	}
+	currentSemVer, err := semver.ParseTolerant(string(currentVersion))
+	if err != nil {
+		logger.Printf("failed to parse current version: %v\n", err)
+		os.Exit(1)
+	}
+
+	prevStableVersionURL := fmt.Sprintf("https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/release-%d.%d/VERSION", currentSemVer.Major, currentSemVer.Minor-1)
+	reader, err := operatorFramework.URLToIOReader(prevStableVersionURL)
+	if err != nil {
+		logger.Printf("failed to get previous version file content: %v\n", err)
+		os.Exit(1)
+	}
+
+	prevStableVersion, err := io.ReadAll(reader)
+	if err != nil {
+		logger.Printf("failed to read previous stable version: %v\n", err)
+		os.Exit(1)
+	}
+
+	prometheusOperatorGithubBranchURL := "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator"
+
+	prevSemVer, err := semver.ParseTolerant(string(prevStableVersion))
+	if err != nil {
+		logger.Printf("failed to parse previous stable version: %v\n", err)
+		os.Exit(1)
+	}
+	prevStableOpImage := fmt.Sprintf("%s:v%s", "quay.io/prometheus-operator/prometheus-operator", strings.TrimSpace(string(prevStableVersion)))
+	prevExampleDir := fmt.Sprintf("%s/release-%d.%d/example", prometheusOperatorGithubBranchURL, prevSemVer.Major, prevSemVer.Minor)
+	prevResourcesDir := fmt.Sprintf("%s/release-%d.%d/test/framework/resources", prometheusOperatorGithubBranchURL, prevSemVer.Major, prevSemVer.Minor)
+
+	if previousVersionFramework, err = operatorFramework.New(*kubeconfig, prevStableOpImage, prevExampleDir, prevResourcesDir, prevSemVer); err != nil {
+		logger.Printf("failed to setup previous version framework: %v\n", err)
+		os.Exit(1)
+	}
+
+	exampleDir := "../../example"
+	resourcesDir := "../framework/resources"
+
+	nextSemVer, err := semver.ParseTolerant(fmt.Sprintf("0.%d.0", currentSemVer.Minor))
+	if err != nil {
+		logger.Printf("failed to parse next version: %v\n", err)
+		os.Exit(1)
+	}
+
+	// init with next minor version since we are developing toward it.
+	if framework, err = operatorFramework.New(*kubeconfig, *opImage, exampleDir, resourcesDir, nextSemVer); err != nil {
+		logger.Printf("failed to setup framework: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -94,12 +172,14 @@ func TestMain(m *testing.M) {
 // TestAllNS tests the Prometheus Operator watching all namespaces in a
 // Kubernetes cluster.
 func TestAllNS(t *testing.T) {
+	skipAllNSTests(t)
+
 	testCtx := framework.NewTestCtx(t)
 	defer testCtx.Cleanup(t)
 
 	ns := framework.CreateNamespace(context.Background(), t, testCtx)
 
-	finalizers, err := framework.CreatePrometheusOperator(context.Background(), ns, *opImage, nil, nil, nil, nil, true, true)
+	finalizers, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, nil, nil, nil, nil, true, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +188,7 @@ func TestAllNS(t *testing.T) {
 		testCtx.AddFinalizerFn(f)
 	}
 
-	t.Run("TestServerTLS", testServerTLS(context.Background(), t, ns))
+	t.Run("TestServerTLS", testServerTLS(context.Background(), ns))
 
 	// t.Run blocks until the function passed as the second argument (f) returns or
 	// calls t.Parallel to become a parallel test. Run reports whether f succeeded
@@ -152,21 +232,27 @@ func TestAllNS(t *testing.T) {
 func testAllNSAlertmanager(t *testing.T) {
 	skipAlertmanagerTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		"AMCreateDeleteCluster":           testAMCreateDeleteCluster,
-		"AMScaling":                       testAMScaling,
-		"AMVersionMigration":              testAMVersionMigration,
-		"AMStorageUpdate":                 testAMStorageUpdate,
-		"AMExposingWithKubernetesAPI":     testAMExposingWithKubernetesAPI,
-		"AMClusterInitialization":         testAMClusterInitialization,
-		"AMClusterAfterRollingUpdate":     testAMClusterAfterRollingUpdate,
-		"AMClusterGossipSilences":         testAMClusterGossipSilences,
-		"AMReloadConfig":                  testAMReloadConfig,
-		"AMZeroDowntimeRollingDeployment": testAMZeroDowntimeRollingDeployment,
-		"AMAlertmanagerConfigCRD":         testAlertmanagerConfigCRD,
-		"AMUserDefinedAlertmanagerConfig": testUserDefinedAlertmanagerConfig,
-		"AMPreserveUserAddedMetadata":     testAMPreserveUserAddedMetadata,
-		"AMRollbackManualChanges":         testAMRollbackManualChanges,
-		"AMMinReadySeconds":               testAlertManagerMinReadySeconds,
+		"AlertmanagerCRD":                         testAlertmanagerCRDValidation,
+		"AMCreateDeleteCluster":                   testAMCreateDeleteCluster,
+		"AMWithStatefulsetCreationFailure":        testAlertmanagerWithStatefulsetCreationFailure,
+		"AMScaling":                               testAMScaling,
+		"AMVersionMigration":                      testAMVersionMigration,
+		"AMStorageUpdate":                         testAMStorageUpdate,
+		"AMExposingWithKubernetesAPI":             testAMExposingWithKubernetesAPI,
+		"AMClusterInitialization":                 testAMClusterInitialization,
+		"AMClusterAfterRollingUpdate":             testAMClusterAfterRollingUpdate,
+		"AMClusterGossipSilences":                 testAMClusterGossipSilences,
+		"AMReloadConfig":                          testAMReloadConfig,
+		"AMZeroDowntimeRollingDeployment":         testAMZeroDowntimeRollingDeployment,
+		"AMAlertmanagerConfigCRD":                 testAlertmanagerConfigCRD,
+		"AMAlertmanagerConfigVersions":            testAlertmanagerConfigVersions,
+		"AMUserDefinedAMConfigFromSecret":         testUserDefinedAlertmanagerConfigFromSecret,
+		"AMUserDefinedAMConfigFromCustomResource": testUserDefinedAlertmanagerConfigFromCustomResource,
+		"AMPreserveUserAddedMetadata":             testAMPreserveUserAddedMetadata,
+		"AMRollbackManualChanges":                 testAMRollbackManualChanges,
+		"AMMinReadySeconds":                       testAlertManagerMinReadySeconds,
+		"AMWeb":                                   testAMWeb,
+		"AMTemplateReloadConfig":                  testAMTmplateReloadConfig,
 	}
 
 	for name, f := range testFuncs {
@@ -177,43 +263,56 @@ func testAllNSAlertmanager(t *testing.T) {
 func testAllNSPrometheus(t *testing.T) {
 	skipPrometheusAllNSTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		"PromRemoteWriteWithTLS":                 testPromRemoteWriteWithTLS,
-		"PromCreateDeleteCluster":                testPromCreateDeleteCluster,
-		"PromScaleUpDownCluster":                 testPromScaleUpDownCluster,
-		"PromNoServiceMonitorSelector":           testPromNoServiceMonitorSelector,
-		"PromVersionMigration":                   testPromVersionMigration,
-		"PromResourceUpdate":                     testPromResourceUpdate,
-		"PromStorageLabelsAnnotations":           testPromStorageLabelsAnnotations,
-		"PromStorageUpdate":                      testPromStorageUpdate,
-		"PromReloadConfig":                       testPromReloadConfig,
-		"PromAdditionalScrapeConfig":             testPromAdditionalScrapeConfig,
-		"PromAdditionalAlertManagerConfig":       testPromAdditionalAlertManagerConfig,
-		"PromReloadRules":                        testPromReloadRules,
-		"PromMultiplePrometheusRulesSameNS":      testPromMultiplePrometheusRulesSameNS,
-		"PromMultiplePrometheusRulesDifferentNS": testPromMultiplePrometheusRulesDifferentNS,
-		"PromRulesExceedingConfigMapLimit":       testPromRulesExceedingConfigMapLimit,
-		"PromRulesMustBeAnnotated":               testPromRulesMustBeAnnotated,
-		"PromtestInvalidRulesAreRejected":        testInvalidRulesAreRejected,
-		"PromOnlyUpdatedOnRelevantChanges":       testPromOnlyUpdatedOnRelevantChanges,
-		"PromWhenDeleteCRDCleanUpViaOwnerRef":    testPromWhenDeleteCRDCleanUpViaOwnerRef,
-		"PromDiscovery":                          testPromDiscovery,
-		"ShardingProvisioning":                   testShardingProvisioning,
-		"Resharding":                             testResharding,
-		"PromAlertmanagerDiscovery":              testPromAlertmanagerDiscovery,
-		"PromExposingWithKubernetesAPI":          testPromExposingWithKubernetesAPI,
-		"PromDiscoverTargetPort":                 testPromDiscoverTargetPort,
-		"PromOpMatchPromAndServMonInDiffNSs":     testPromOpMatchPromAndServMonInDiffNSs,
-		"PromGetAuthSecret":                      testPromGetAuthSecret,
-		"PromArbitraryFSAcc":                     testPromArbitraryFSAcc,
-		"PromTLSConfigViaSecret":                 testPromTLSConfigViaSecret,
-		"Thanos":                                 testThanos,
-		"PromStaticProbe":                        testPromStaticProbe,
-		"PromSecurePodMonitor":                   testPromSecurePodMonitor,
-		"PromSharedResourcesReconciliation":      testPromSharedResourcesReconciliation,
-		"PromPreserveUserAddedMetadata":          testPromPreserveUserAddedMetadata,
-		"PromWebTLS":                             testPromWebTLS,
-		"PromMinReadySeconds":                    testPromMinReadySeconds,
-		"PromEnforcedNamespaceLabel":             testPromEnforcedNamespaceLabel,
+		"PrometheusCRDValidation":                   testPrometheusCRDValidation,
+		"PromRemoteWriteWithTLS":                    testPromRemoteWriteWithTLS,
+		"PromCreateDeleteCluster":                   testPromCreateDeleteCluster,
+		"PromScaleUpDownCluster":                    testPromScaleUpDownCluster,
+		"PromNoServiceMonitorSelector":              testPromNoServiceMonitorSelector,
+		"PromResourceUpdate":                        testPromResourceUpdate,
+		"PromStorageLabelsAnnotations":              testPromStorageLabelsAnnotations,
+		"PromStorageUpdate":                         testPromStorageUpdate,
+		"PromReloadConfig":                          testPromReloadConfig,
+		"PromAdditionalScrapeConfig":                testPromAdditionalScrapeConfig,
+		"PromAdditionalAlertManagerConfig":          testPromAdditionalAlertManagerConfig,
+		"PromReloadRules":                           testPromReloadRules,
+		"PromMultiplePrometheusRulesSameNS":         testPromMultiplePrometheusRulesSameNS,
+		"PromMultiplePrometheusRulesDifferentNS":    testPromMultiplePrometheusRulesDifferentNS,
+		"PromRulesExceedingConfigMapLimit":          testPromRulesExceedingConfigMapLimit,
+		"PromRulesMustBeAnnotated":                  testPromRulesMustBeAnnotated,
+		"PromtestInvalidRulesAreRejected":           testInvalidRulesAreRejected,
+		"PromOnlyUpdatedOnRelevantChanges":          testPromOnlyUpdatedOnRelevantChanges,
+		"PromWhenDeleteCRDCleanUpViaOwnerRef":       testPromWhenDeleteCRDCleanUpViaOwnerRef,
+		"PromDiscovery":                             testPromDiscovery,
+		"ShardingProvisioning":                      testShardingProvisioning,
+		"Resharding":                                testResharding,
+		"PromAlertmanagerDiscovery":                 testPromAlertmanagerDiscovery,
+		"PromExposingWithKubernetesAPI":             testPromExposingWithKubernetesAPI,
+		"PromDiscoverTargetPort":                    testPromDiscoverTargetPort,
+		"PromOpMatchPromAndServMonInDiffNSs":        testPromOpMatchPromAndServMonInDiffNSs,
+		"PromGetAuthSecret":                         testPromGetAuthSecret,
+		"PromArbitraryFSAcc":                        testPromArbitraryFSAcc,
+		"PromTLSConfigViaSecret":                    testPromTLSConfigViaSecret,
+		"Thanos":                                    testThanos,
+		"PromStaticProbe":                           testPromStaticProbe,
+		"PromSecurePodMonitor":                      testPromSecurePodMonitor,
+		"PromSharedResourcesReconciliation":         testPromSharedResourcesReconciliation,
+		"PromPreserveUserAddedMetadata":             testPromPreserveUserAddedMetadata,
+		"PromWebWithThanosSidecar":                  testPromWebWithThanosSidecar,
+		"PromMinReadySeconds":                       testPromMinReadySeconds,
+		"PromEnforcedNamespaceLabel":                testPromEnforcedNamespaceLabel,
+		"PromNamespaceEnforcementExclusion":         testPromNamespaceEnforcementExclusion,
+		"PromQueryLogFile":                          testPromQueryLogFile,
+		"PromDegradedCondition":                     testPromDegradedConditionStatus,
+		"PromUnavailableCondition":                  testPromUnavailableConditionStatus,
+		"PromStrategicMergePatch":                   testPromStrategicMergePatch,
+		"RelabelConfigCRDValidation":                testRelabelConfigCRDValidation,
+		"PromReconcileStatusWhenInvalidRuleCreated": testPromReconcileStatusWhenInvalidRuleCreated,
+		"ScrapeConfigCreation":                      testScrapeConfigCreation,
+		"CreatePrometheusAgent":                     testCreatePrometheusAgent,
+		"PrometheusAgentAndServerNameColision":      testAgentAndServerNameColision,
+		"ScrapeConfigKubeNode":                      testScrapeConfigKubernetesNodeRole,
+		"ScrapeConfigDNSSD":                         testScrapeConfigDNSSDConfig,
+		"PrometheusWithStatefulsetCreationFailure":  testPrometheusWithStatefulsetCreationFailure,
 	}
 
 	for name, f := range testFuncs {
@@ -225,9 +324,12 @@ func testAllNSThanosRuler(t *testing.T) {
 	skipThanosRulerTests(t)
 	testFuncs := map[string]func(t *testing.T){
 		"ThanosRulerCreateDeleteCluster":                testThanosRulerCreateDeleteCluster,
+		"ThanosRulerWithStatefulsetCreationFailure":     testThanosRulerWithStatefulsetCreationFailure,
 		"ThanosRulerPrometheusRuleInDifferentNamespace": testThanosRulerPrometheusRuleInDifferentNamespace,
 		"ThanosRulerPreserveUserAddedMetadata":          testTRPreserveUserAddedMetadata,
 		"ThanosRulerMinReadySeconds":                    testTRMinReadySeconds,
+		"ThanosRulerAlertmanagerConfig":                 testTRAlertmanagerConfig,
+		"ThanosRulerQueryConfig":                        testTRQueryConfig,
 	}
 	for name, f := range testFuncs {
 		t.Run(name, f)
@@ -265,10 +367,11 @@ func TestDenylist(t *testing.T) {
 func TestPromInstanceNs(t *testing.T) {
 	skipPrometheusTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		"AllNs":             testPrometheusInstanceNamespacesAllNs,
-		"AllowList":         testPrometheusInstanceNamespacesAllowList,
-		"DenyList":          testPrometheusInstanceNamespacesDenyList,
-		"NamespaceNotFound": testPrometheusInstanceNamespacesNamespaceNotFound,
+		"AllNs":                 testPrometheusInstanceNamespacesAllNs,
+		"AllowList":             testPrometheusInstanceNamespacesAllowList,
+		"DenyList":              testPrometheusInstanceNamespacesDenyList,
+		"NamespaceNotFound":     testPrometheusInstanceNamespacesNamespaceNotFound,
+		"ScrapeConfigLifecycle": testScrapeConfigLifecycle,
 	}
 
 	for name, f := range testFuncs {
@@ -290,11 +393,36 @@ func TestAlertmanagerInstanceNs(t *testing.T) {
 	}
 }
 
+// TestOperatorUpgrade tests the prometheus upgrade from previous stable minor version to current version
+func TestOperatorUpgrade(t *testing.T) {
+	skipOperatorUpgradeTests(t)
+	testFuncs := map[string]func(t *testing.T){
+		"OperatorUpgrade":                          testOperatorUpgrade,
+		"PromOperatorStartsWithoutScrapeConfigCRD": testPromOperatorStartsWithoutScrapeConfigCRD,
+	}
+
+	for name, f := range testFuncs {
+		t.Run(name, f)
+	}
+}
+
 const (
 	prometheusOperatorServiceName = "prometheus-operator"
 )
 
-func testServerTLS(ctx context.Context, t *testing.T, namespace string) func(t *testing.T) {
+// TestPrometheusVersionUpgrade tests that all Prometheus versions in the compatibility matrix can be upgraded
+func TestPrometheusVersionUpgrade(t *testing.T) {
+	skipPromVersionUpgradeTests(t)
+	testFuncs := map[string]func(t *testing.T){
+		"PromVersionMigration": testPromVersionMigration,
+	}
+
+	for name, f := range testFuncs {
+		t.Run(name, f)
+	}
+}
+
+func testServerTLS(ctx context.Context, namespace string) func(t *testing.T) {
 	return func(t *testing.T) {
 		skipPrometheusTests(t)
 		if err := framework.WaitForServiceReady(context.Background(), namespace, prometheusOperatorServiceName); err != nil {

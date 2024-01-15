@@ -1,6 +1,8 @@
 /operator
+/admission-webhook
 /po-lint
 /prometheus-config-reloader
+example/alertmanager-webhook/linux/
 .build/
 *~
 *.tgz
@@ -12,7 +14,9 @@ __pycache__
 .env/
 .history/
 .vscode/
+vendor/
 tmp
+stripped-down-crds.yaml
 
 # These are empty target files, created on every docker build. Their sole
 # purpose is to track the last target execution time to evalualte, whether the

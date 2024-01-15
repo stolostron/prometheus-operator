@@ -5,12 +5,16 @@ metadata:
 webhooks:
   - clientConfig:
       service:
-        name: prometheus-operator
+        name: prometheus-operator-admission-webhook
         namespace: default
         path: /admission-prometheusrules/validate
     failurePolicy: Fail
     name: prometheusrulemutate.monitoring.coreos.com
-    namespaceSelector: {}
+    namespaceSelector:
+      matchExpressions:
+      - key: excludeFromWebhook
+        operator: NotIn
+        values: ["true"]
     rules:
       - apiGroups:
           - monitoring.coreos.com

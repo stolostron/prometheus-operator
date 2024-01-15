@@ -19,7 +19,6 @@ import (
 	"testing"
 
 	"github.com/gogo/protobuf/proto"
-
 	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -37,7 +36,7 @@ func testDenyPrometheus(t *testing.T) {
 
 	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, operatorNamespace)
 
-	_, err := framework.CreatePrometheusOperator(context.Background(), operatorNamespace, *opImage, nil, deniedNamespaces, nil, nil, false, true)
+	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), operatorNamespace, nil, deniedNamespaces, nil, nil, false, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -87,7 +86,7 @@ func testDenyServiceMonitor(t *testing.T) {
 
 	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, operatorNamespace)
 
-	_, err := framework.CreatePrometheusOperator(context.Background(), operatorNamespace, *opImage, nil, deniedNamespaces, nil, nil, false, true)
+	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), operatorNamespace, nil, deniedNamespaces, nil, nil, false, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -133,7 +132,7 @@ func testDenyServiceMonitor(t *testing.T) {
 		}
 
 		svc := framework.MakePrometheusService("denied", "denied", v1.ServiceTypeClusterIP)
-		if finalizerFn, err := framework.CreateServiceAndWaitUntilReady(context.Background(), denied, svc); err != nil {
+		if finalizerFn, err := framework.CreateOrUpdateServiceAndWaitUntilReady(context.Background(), denied, svc); err != nil {
 			t.Fatal(errors.Wrap(err, "creating prometheus service failed"))
 		} else {
 			testCtx.AddFinalizerFn(finalizerFn)
@@ -155,7 +154,7 @@ func testDenyServiceMonitor(t *testing.T) {
 		}
 
 		svc := framework.MakePrometheusService("allowed", "allowed", v1.ServiceTypeClusterIP)
-		if finalizerFn, err := framework.CreateServiceAndWaitUntilReady(context.Background(), allowed, svc); err != nil {
+		if finalizerFn, err := framework.CreateOrUpdateServiceAndWaitUntilReady(context.Background(), allowed, svc); err != nil {
 			t.Fatal(errors.Wrap(err, "creating prometheus service failed"))
 		} else {
 			testCtx.AddFinalizerFn(finalizerFn)
@@ -204,7 +203,7 @@ func testDenyThanosRuler(t *testing.T) {
 
 	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, operatorNamespace)
 
-	_, err := framework.CreatePrometheusOperator(context.Background(), operatorNamespace, *opImage, nil, deniedNamespaces, nil, nil, false, true)
+	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), operatorNamespace, nil, deniedNamespaces, nil, nil, false, true, true)
 	if err != nil {
 		t.Fatal(err)
 	}

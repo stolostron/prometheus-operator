@@ -5,6 +5,10 @@ local defaults = {
   version: error 'must provide version',
   image: error 'must provide image',
   configReloaderImage: error 'must provide configReloaderImage',
+  configReloaderResources: {
+    limits: { cpu: '', memory: '' },
+    requests: { cpu: '', memory: '' },
+  },
   port: 8080,
   resources: {
     limits: { cpu: '200m', memory: '200Mi' },
@@ -20,6 +24,7 @@ local defaults = {
     for labelName in std.objectFields(defaults.commonLabels)
     if !std.setMember(labelName, ['app.kubernetes.io/version'])
   },
+  enableAlertmanagerConfigV1beta1: false,
 };
 
 function(params) {
@@ -28,13 +33,18 @@ function(params) {
 
   // Prefixing with 0 to ensure these manifests are listed and therefore created first.
   '0alertmanagerCustomResourceDefinition': import 'alertmanagers-crd.json',
-  '0alertmanagerConfigCustomResourceDefinition': import 'alertmanagerconfigs-crd.json',
+  '0alertmanagerConfigCustomResourceDefinition': (import 'alertmanagerconfigs-crd.json') +
+                                                 if po.config.enableAlertmanagerConfigV1beta1 then
+                                                   (import 'alertmanagerconfigs-v1beta1-crd.libsonnet')
+                                                 else {},
+  '0prometheusagentCustomResourceDefinition': import 'prometheusagents-crd.json',
   '0prometheusCustomResourceDefinition': import 'prometheuses-crd.json',
   '0servicemonitorCustomResourceDefinition': import 'servicemonitors-crd.json',
   '0podmonitorCustomResourceDefinition': import 'podmonitors-crd.json',
   '0probeCustomResourceDefinition': import 'probes-crd.json',
   '0prometheusruleCustomResourceDefinition': import 'prometheusrules-crd.json',
   '0thanosrulerCustomResourceDefinition': import 'thanosrulers-crd.json',
+  '0scrapeconfigCustomResourceDefinition': import 'scrapeconfigs-crd.json',
 
   clusterRoleBinding: {
     apiVersion: 'rbac.authorization.k8s.io/v1',
@@ -68,11 +78,18 @@ function(params) {
         resources: [
           'alertmanagers',
           'alertmanagers/finalizers',
+          'alertmanagers/status',
           'alertmanagerconfigs',
           'prometheuses',
           'prometheuses/finalizers',
+          'prometheuses/status',
+          'prometheusagents',
+          'prometheusagents/finalizers',
+          'prometheusagents/status',
           'thanosrulers',
           'thanosrulers/finalizers',
+          'thanosrulers/status',
+          'scrapeconfigs',
           'servicemonitors',
           'podmonitors',
           'probes',
@@ -123,13 +140,20 @@ function(params) {
   },
 
   deployment:
+    local reloaderResourceArg(arg, value) =
+      if value != '' then [arg + '=' + value] else [];
+
     local container = {
       name: po.config.name,
       image: po.config.image,
       args: [
-        '--kubelet-service=kube-system/kubelet',
-        '--prometheus-config-reloader=' + po.config.configReloaderImage,
-      ],
+              '--kubelet-service=kube-system/kubelet',
+              '--prometheus-config-reloader=' + po.config.configReloaderImage,
+            ] +
+            reloaderResourceArg('--config-reloader-cpu-limit', po.config.configReloaderResources.limits.cpu) +
+            reloaderResourceArg('--config-reloader-memory-limit', po.config.configReloaderResources.limits.memory) +
+            reloaderResourceArg('--config-reloader-cpu-request', po.config.configReloaderResources.requests.cpu) +
+            reloaderResourceArg('--config-reloader-memory-request', po.config.configReloaderResources.requests.memory),
       ports: [{
         containerPort: po.config.port,
         name: 'http',
@@ -137,6 +161,8 @@ function(params) {
       resources: po.config.resources,
       securityContext: {
         allowPrivilegeEscalation: false,
+        readOnlyRootFilesystem: true,
+        capabilities: { drop: ['ALL'] },
       },
     };
     {
@@ -154,8 +180,8 @@ function(params) {
           metadata: {
             labels: po.config.commonLabels,
             annotations: {
-              "kubectl.kubernetes.io/default-container": container.name,
-            }
+              'kubectl.kubernetes.io/default-container': container.name,
+            },
           },
           spec: {
             containers: [container],
@@ -166,8 +192,10 @@ function(params) {
             securityContext: {
               runAsNonRoot: true,
               runAsUser: 65534,
+              seccompProfile: { type: 'RuntimeDefault' },
             },
             serviceAccountName: po.config.name,
+            automountServiceAccountToken: true,
           },
         },
       },
@@ -181,6 +209,7 @@ function(params) {
       namespace: po.config.namespace,
       labels: po.config.commonLabels,
     },
+    automountServiceAccountToken: false,
   },
 
   service: {

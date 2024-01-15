@@ -21,24 +21,22 @@ import (
 	"testing"
 
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
+	appsv1 "k8s.io/api/apps/v1"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
+
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
-	"github.com/stretchr/testify/require"
-	v1 "k8s.io/api/core/v1"
-	"k8s.io/apimachinery/pkg/api/resource"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 )
 
 var (
 	defaultTestConfig = Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "100m",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
+		LocalHost:                    "localhost",
+		ReloaderConfig:               operator.DefaultReloaderTestConfig.ReloaderConfig,
+		AlertmanagerDefaultBaseImage: operator.DefaultAlertmanagerBaseImage,
 	}
 )
 
@@ -314,6 +312,95 @@ func TestListenLocal(t *testing.T) {
 	}
 }
 
+func TestListenTLS(t *testing.T) {
+	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
+		Spec: monitoringv1.AlertmanagerSpec{
+			Web: &monitoringv1.AlertmanagerWebSpec{
+				WebConfigFileFields: monitoringv1.WebConfigFileFields{
+					TLSConfig: &monitoringv1.WebTLSConfig{
+						KeySecret: v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "some-secret",
+							},
+						},
+						Cert: monitoringv1.SecretOrConfigMap{
+							ConfigMap: &v1.ConfigMapKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "some-configmap",
+								},
+							},
+						},
+					},
+				},
+			},
+		},
+	}, defaultTestConfig, "", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
+	}
+
+	expectedProbeHandler := func(probePath string) v1.ProbeHandler {
+		return v1.ProbeHandler{
+			HTTPGet: &v1.HTTPGetAction{
+				Path:   probePath,
+				Port:   intstr.FromString("web"),
+				Scheme: "HTTPS",
+			},
+		}
+	}
+
+	actualLivenessProbe := sset.Spec.Template.Spec.Containers[0].LivenessProbe
+	expectedLivenessProbe := &v1.Probe{
+		ProbeHandler:     expectedProbeHandler("/-/healthy"),
+		TimeoutSeconds:   3,
+		FailureThreshold: 10,
+	}
+	if !reflect.DeepEqual(actualLivenessProbe, expectedLivenessProbe) {
+		t.Fatalf("Liveness probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedLivenessProbe, actualLivenessProbe)
+	}
+
+	actualReadinessProbe := sset.Spec.Template.Spec.Containers[0].ReadinessProbe
+	expectedReadinessProbe := &v1.Probe{
+		ProbeHandler:        expectedProbeHandler("/-/ready"),
+		InitialDelaySeconds: 3,
+		TimeoutSeconds:      3,
+		PeriodSeconds:       5,
+		FailureThreshold:    10,
+	}
+	if !reflect.DeepEqual(actualReadinessProbe, expectedReadinessProbe) {
+		t.Fatalf("Readiness probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedReadinessProbe, actualReadinessProbe)
+	}
+
+	expectedConfigReloaderReloadURL := "--reload-url=https://localhost:9093/-/reload"
+	reloadURLFound := false
+	for _, arg := range sset.Spec.Template.Spec.Containers[1].Args {
+		fmt.Println(arg)
+
+		if arg == expectedConfigReloaderReloadURL {
+			reloadURLFound = true
+		}
+	}
+	if !reloadURLFound {
+		t.Fatalf("expected to find arg %s in config reloader", expectedConfigReloaderReloadURL)
+	}
+
+	expectedArgsConfigReloader := []string{
+		"--listen-address=:8080",
+		"--reload-url=https://localhost:9093/-/reload",
+		"--config-file=/etc/alertmanager/config/alertmanager.yaml.gz",
+		"--config-envsubst-file=/etc/alertmanager/config_out/alertmanager.env.yaml",
+		"--watched-dir=/etc/alertmanager/config",
+	}
+
+	for _, c := range sset.Spec.Template.Spec.Containers {
+		if c.Name == "config-reloader" {
+			if !reflect.DeepEqual(c.Args, expectedArgsConfigReloader) {
+				t.Fatalf("expected container args are %s, but found %s", expectedArgsConfigReloader, c.Args)
+			}
+		}
+	}
+}
+
 // below Alertmanager v0.13.0 all flags are with single dash.
 func TestMakeStatefulSetSpecSingleDoubleDashedArgs(t *testing.T) {
 	tests := []struct {
@@ -369,6 +456,109 @@ func TestMakeStatefulSetSpecWebRoutePrefix(t *testing.T) {
 
 	if !containsWebRoutePrefix {
 		t.Fatal("expected stateful set to contain arg '-web.route-prefix'")
+	}
+}
+
+func TestMakeStatefulSetSpecWebTimeout(t *testing.T) {
+
+	tt := []struct {
+		scenario         string
+		version          string
+		web              *monitoringv1.AlertmanagerWebSpec
+		expectTimeoutArg bool
+	}{{
+		scenario:         "no timeout by default",
+		version:          operator.DefaultAlertmanagerVersion,
+		web:              nil,
+		expectTimeoutArg: false,
+	}, {
+		scenario: "no timeout for old version",
+		version:  "0.16.9",
+		web: &monitoringv1.AlertmanagerWebSpec{
+			Timeout: toPtr(uint32(50)),
+		},
+		expectTimeoutArg: false,
+	}, {
+		scenario: "timeout arg set if specified",
+		version:  operator.DefaultAlertmanagerVersion,
+		web: &monitoringv1.AlertmanagerWebSpec{
+			Timeout: toPtr(uint32(50)),
+		},
+		expectTimeoutArg: true,
+	}}
+
+	for _, ts := range tt {
+		ts := ts
+		t.Run(ts.scenario, func(t *testing.T) {
+			a := monitoringv1.Alertmanager{}
+			a.Spec.Replicas = toPtr(int32(1))
+
+			a.Spec.Version = ts.version
+			a.Spec.Web = ts.web
+
+			ss, err := makeStatefulSetSpec(&a, defaultTestConfig, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			args := ss.Template.Spec.Containers[0].Args
+			if got := slices.ContainsFunc(args, containsString("-web.timeout")); got != ts.expectTimeoutArg {
+				t.Fatalf("expected alertmanager args %v web.timeout to be %v but is %v", args, ts.expectTimeoutArg, got)
+			}
+
+		})
+	}
+}
+
+func TestMakeStatefulSetSpecWebConcurrency(t *testing.T) {
+
+	tt := []struct {
+		scenario                string
+		version                 string
+		web                     *monitoringv1.AlertmanagerWebSpec
+		expectGetConcurrencyArg bool
+	}{{
+		scenario:                "no get-concurrency by default",
+		version:                 operator.DefaultAlertmanagerVersion,
+		web:                     nil,
+		expectGetConcurrencyArg: false,
+	}, {
+		scenario: "no get-concurrency for old version",
+		version:  "0.16.9",
+		web: &monitoringv1.AlertmanagerWebSpec{
+			GetConcurrency: toPtr(uint32(50)),
+		},
+		expectGetConcurrencyArg: false,
+	}, {
+		scenario: "get-concurrency arg set if specified",
+		version:  operator.DefaultAlertmanagerVersion,
+
+		web: &monitoringv1.AlertmanagerWebSpec{
+			GetConcurrency: toPtr(uint32(50)),
+		},
+		expectGetConcurrencyArg: true,
+	}}
+
+	for _, ts := range tt {
+		ts := ts
+		t.Run(ts.scenario, func(t *testing.T) {
+			a := monitoringv1.Alertmanager{}
+			a.Spec.Replicas = toPtr(int32(1))
+
+			a.Spec.Version = ts.version
+			a.Spec.Web = ts.web
+
+			ss, err := makeStatefulSetSpec(&a, defaultTestConfig, nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			args := ss.Template.Spec.Containers[0].Args
+			if got := slices.ContainsFunc(args, containsString("-web.get-concurrency")); got != ts.expectGetConcurrencyArg {
+				t.Fatalf("expected alertmanager args %v web.get-concurrency to be %v but is %v", args, ts.expectGetConcurrencyArg, got)
+			}
+
+		})
 	}
 }
 
@@ -464,6 +654,53 @@ func TestMakeStatefulSetSpecAdditionalPeers(t *testing.T) {
 	}
 }
 
+func TestMakeStatefulSetSpecNotificationTemplates(t *testing.T) {
+	replicas := int32(1)
+	a := monitoringv1.Alertmanager{
+		Spec: monitoringv1.AlertmanagerSpec{
+			Replicas: &replicas,
+			AlertmanagerConfiguration: &monitoringv1.AlertmanagerConfiguration{
+				Templates: []monitoringv1.SecretOrConfigMap{
+					{
+						Secret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "template1",
+							},
+							Key: "template1.tmpl",
+						},
+					},
+				},
+			},
+		},
+	}
+	statefulSet, err := makeStatefulSetSpec(&a, defaultTestConfig, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var foundVM, foundV bool
+	for _, vm := range statefulSet.Template.Spec.Containers[0].VolumeMounts {
+		if vm.Name == "notification-templates" && vm.MountPath == alertmanagerTemplatesDir {
+			foundVM = true
+			break
+		}
+	}
+	for _, v := range statefulSet.Template.Spec.Volumes {
+		if v.Name == "notification-templates" && v.Projected != nil {
+			for _, s := range v.Projected.Sources {
+				if s.Secret != nil && s.Secret.Name == "template1" {
+					foundV = true
+					break
+				}
+			}
+		}
+	}
+
+	if !(foundVM && foundV) {
+		t.Fatal("Notification templates were not found.")
+	}
+}
+
 func TestAdditionalSecretsMounted(t *testing.T) {
 	secrets := []string{"secret1", "secret2"}
 	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
@@ -509,13 +746,7 @@ func TestAdditionalSecretsMounted(t *testing.T) {
 
 func TestAlertManagerDefaultBaseImageFlag(t *testing.T) {
 	alertManagerBaseImageConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "100m",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "50Mi",
-		},
+		ReloaderConfig:               defaultTestConfig.ReloaderConfig,
 		AlertmanagerDefaultBaseImage: "nondefaultuseflag/quay.io/prometheus/alertmanager",
 	}
 
@@ -602,8 +833,8 @@ func TestSHAAndTagAndVersion(t *testing.T) {
 
 func TestRetention(t *testing.T) {
 	tests := []struct {
-		specRetention     string
-		expectedRetention string
+		specRetention     monitoringv1.GoDuration
+		expectedRetention monitoringv1.GoDuration
 	}{
 		{"", "120h"},
 		{"1d", "1d"},
@@ -649,6 +880,7 @@ func TestAdditionalConfigMap(t *testing.T) {
 	for _, v := range sset.Spec.Template.Spec.Volumes {
 		if v.Name == "configmap-test-cm1" {
 			cmVolumeFound = true
+			break
 		}
 	}
 	if !cmVolumeFound {
@@ -659,6 +891,7 @@ func TestAdditionalConfigMap(t *testing.T) {
 	for _, v := range sset.Spec.Template.Spec.Containers[0].VolumeMounts {
 		if v.Name == "configmap-test-cm1" && v.MountPath == "/etc/alertmanager/configmaps/test-cm1" {
 			cmMounted = true
+			break
 		}
 	}
 	if !cmMounted {
@@ -666,299 +899,20 @@ func TestAdditionalConfigMap(t *testing.T) {
 	}
 }
 
-func TestSidecarsNoResources(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "0",
-			CPULimit:      "0",
-			MemoryRequest: "0",
-			MemoryLimit:   "0",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits:   v1.ResourceList{},
-		Requests: v1.ResourceList{},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
+func TestSidecarResources(t *testing.T) {
+	operator.TestSidecarsResources(t, func(reloaderConfig operator.ContainerConfig) *appsv1.StatefulSet {
+		testConfig := Config{
+			ReloaderConfig:               reloaderConfig,
+			AlertmanagerDefaultBaseImage: operator.DefaultAlertmanagerBaseImage,
 		}
-	}
-}
-
-func TestSidecarsNoRequests(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "0",
-			CPULimit:      "100m",
-			MemoryRequest: "0",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-		Requests: v1.ResourceList{},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
+		am := &monitoringv1.Alertmanager{
+			Spec: monitoringv1.AlertmanagerSpec{},
 		}
-	}
-}
 
-func TestSidecarsNoLimits(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "0",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "0",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoCPUResources(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "0",
-			CPULimit:      "0",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoCPURequests(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "0",
-			CPULimit:      "100m",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoCPULimits(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "0",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoMemoryResources(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "100m",
-			MemoryRequest: "0",
-			MemoryLimit:   "0",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU: resource.MustParse("100m"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU: resource.MustParse("100m"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoMemoryRequests(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "100m",
-			MemoryRequest: "0",
-			MemoryLimit:   "50Mi",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU: resource.MustParse("100m"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
-}
-
-func TestSidecarsNoMemoryLimits(t *testing.T) {
-	testConfig := Config{
-		ReloaderConfig: operator.ReloaderConfig{
-			Image:         "quay.io/prometheus-operator/prometheus-config-reloader:latest",
-			CPURequest:    "100m",
-			CPULimit:      "100m",
-			MemoryRequest: "50Mi",
-			MemoryLimit:   "0",
-		},
-		AlertmanagerDefaultBaseImage: "quay.io/prometheus/alertmanager",
-	}
-	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
-		Spec: monitoringv1.AlertmanagerSpec{},
-	}, testConfig, "", nil)
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	expectedResources := v1.ResourceRequirements{
-		Limits: v1.ResourceList{
-			v1.ResourceCPU: resource.MustParse("100m"),
-		},
-		Requests: v1.ResourceList{
-			v1.ResourceCPU:    resource.MustParse("100m"),
-			v1.ResourceMemory: resource.MustParse("50Mi"),
-		},
-	}
-	for _, c := range sset.Spec.Template.Spec.Containers {
-		if c.Name == "config-reloader" && !reflect.DeepEqual(c.Resources, expectedResources) {
-			t.Fatalf("Expected resource requests/limits:\n\n%s\n\nGot:\n\n%s", expectedResources.String(), c.Resources.String())
-		}
-	}
+		sset, err := makeStatefulSet(am, testConfig, "", nil)
+		require.NoError(t, err)
+		return sset
+	})
 }
 
 func TestTerminationPolicy(t *testing.T) {
@@ -1080,4 +1034,164 @@ func TestExpectStatefulSetMinReadySeconds(t *testing.T) {
 	if statefulSet.MinReadySeconds != int32(expect) {
 		t.Fatalf("expected MinReadySeconds to be %d but got %d", expect, statefulSet.MinReadySeconds)
 	}
+}
+
+func TestPodTemplateConfig(t *testing.T) {
+	nodeSelector := map[string]string{
+		"foo": "bar",
+	}
+	affinity := v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{},
+		PodAffinity: &v1.PodAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []v1.WeightedPodAffinityTerm{
+				{
+					PodAffinityTerm: v1.PodAffinityTerm{
+						Namespaces: []string{"foo"},
+					},
+					Weight: 100,
+				},
+			},
+		},
+		PodAntiAffinity: &v1.PodAntiAffinity{},
+	}
+
+	tolerations := []v1.Toleration{
+		{
+			Key: "key",
+		},
+	}
+	userid := int64(1234)
+	securityContext := v1.PodSecurityContext{
+		RunAsUser: &userid,
+	}
+	priorityClassName := "foo"
+	serviceAccountName := "alertmanager-sa"
+	hostAliases := []monitoringv1.HostAlias{
+		{
+			Hostnames: []string{"foo.com"},
+			IP:        "1.1.1.1",
+		},
+	}
+	imagePullSecrets := []v1.LocalObjectReference{
+		{
+			Name: "registry-secret",
+		},
+	}
+	imagePullPolicy := v1.PullAlways
+
+	sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
+		ObjectMeta: metav1.ObjectMeta{},
+		Spec: monitoringv1.AlertmanagerSpec{
+			NodeSelector:       nodeSelector,
+			Affinity:           &affinity,
+			Tolerations:        tolerations,
+			SecurityContext:    &securityContext,
+			PriorityClassName:  priorityClassName,
+			ServiceAccountName: serviceAccountName,
+			HostAliases:        hostAliases,
+			ImagePullSecrets:   imagePullSecrets,
+			ImagePullPolicy:    imagePullPolicy,
+		},
+	}, defaultTestConfig, "", nil)
+	if err != nil {
+		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
+	}
+
+	if !reflect.DeepEqual(sset.Spec.Template.Spec.NodeSelector, nodeSelector) {
+		t.Fatalf("expected node selector to match, want %v, got %v", nodeSelector, sset.Spec.Template.Spec.NodeSelector)
+	}
+	if !reflect.DeepEqual(*sset.Spec.Template.Spec.Affinity, affinity) {
+		t.Fatalf("expected affinity to match, want %v, got %v", affinity, *sset.Spec.Template.Spec.Affinity)
+	}
+	if !reflect.DeepEqual(sset.Spec.Template.Spec.Tolerations, tolerations) {
+		t.Fatalf("expected tolerations to match, want %v, got %v", tolerations, sset.Spec.Template.Spec.Tolerations)
+	}
+	if !reflect.DeepEqual(*sset.Spec.Template.Spec.SecurityContext, securityContext) {
+		t.Fatalf("expected security context  to match, want %v, got %v", securityContext, *sset.Spec.Template.Spec.SecurityContext)
+	}
+	if sset.Spec.Template.Spec.PriorityClassName != priorityClassName {
+		t.Fatalf("expected priority class name to match, want %s, got %s", priorityClassName, sset.Spec.Template.Spec.PriorityClassName)
+	}
+	if sset.Spec.Template.Spec.ServiceAccountName != serviceAccountName {
+		t.Fatalf("expected service account name to match, want %s, got %s", serviceAccountName, sset.Spec.Template.Spec.ServiceAccountName)
+	}
+	if len(sset.Spec.Template.Spec.HostAliases) != len(hostAliases) {
+		t.Fatalf("expected length of host aliases to match, want %d, got %d", len(hostAliases), len(sset.Spec.Template.Spec.HostAliases))
+	}
+	if !reflect.DeepEqual(sset.Spec.Template.Spec.ImagePullSecrets, imagePullSecrets) {
+		t.Fatalf("expected image pull secrets to match, want %s, got %s", imagePullSecrets, sset.Spec.Template.Spec.ImagePullSecrets)
+	}
+	for _, initContainer := range sset.Spec.Template.Spec.InitContainers {
+		if !reflect.DeepEqual(initContainer.ImagePullPolicy, imagePullPolicy) {
+			t.Fatalf("expected imagePullPolicy to match, want %s, got %s", imagePullPolicy, sset.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+		}
+	}
+	for _, container := range sset.Spec.Template.Spec.Containers {
+		if !reflect.DeepEqual(container.ImagePullPolicy, imagePullPolicy) {
+			t.Fatalf("expected imagePullPolicy to match, want %s, got %s", imagePullPolicy, sset.Spec.Template.Spec.Containers[0].ImagePullPolicy)
+		}
+	}
+}
+
+func TestConfigReloader(t *testing.T) {
+	baseSet, err := makeStatefulSet(&monitoringv1.Alertmanager{}, defaultTestConfig, "", nil)
+	require.NoError(t, err)
+
+	expectedArgsConfigReloader := []string{
+		"--listen-address=:8080",
+		"--reload-url=http://localhost:9093/-/reload",
+		"--config-file=/etc/alertmanager/config/alertmanager.yaml.gz",
+		"--config-envsubst-file=/etc/alertmanager/config_out/alertmanager.env.yaml",
+		"--watched-dir=/etc/alertmanager/config",
+	}
+
+	for _, c := range baseSet.Spec.Template.Spec.Containers {
+		if c.Name == "config-reloader" {
+			if !reflect.DeepEqual(c.Args, expectedArgsConfigReloader) {
+				t.Fatalf("expectd container args are %s, but found %s", expectedArgsConfigReloader, c.Args)
+			}
+		}
+	}
+
+	expectedArgsInitConfigReloader := []string{
+		"--watch-interval=0",
+		"--listen-address=:8080",
+		"--config-file=/etc/alertmanager/config/alertmanager.yaml.gz",
+		"--config-envsubst-file=/etc/alertmanager/config_out/alertmanager.env.yaml",
+	}
+
+	for _, c := range baseSet.Spec.Template.Spec.Containers {
+		if c.Name == "init-config-reloader" {
+			if !reflect.DeepEqual(c.Args, expectedArgsConfigReloader) {
+				t.Fatalf("expectd init container args are %s, but found %s", expectedArgsInitConfigReloader, c.Args)
+			}
+		}
+	}
+
+}
+
+func TestAutomountServiceAccountToken(t *testing.T) {
+	for i := range []int{0, 1} {
+		automountServiceAccountToken := (i == 0)
+		sset, err := makeStatefulSet(&monitoringv1.Alertmanager{
+			Spec: monitoringv1.AlertmanagerSpec{
+				AutomountServiceAccountToken: &automountServiceAccountToken,
+			},
+		}, defaultTestConfig, "", nil)
+		if err != nil {
+			t.Fatalf("Unexpected error while making StatefulSet: %v", err)
+		}
+		if *sset.Spec.Template.Spec.AutomountServiceAccountToken != automountServiceAccountToken {
+			t.Fatal("AutomountServiceAccountToken not found")
+		}
+	}
+}
+func containsString(sub string) func(string) bool {
+	return func(x string) bool {
+		return strings.Contains(x, sub)
+	}
+}
+
+func toPtr[T any](t T) *T {
+	return &t
 }

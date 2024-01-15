@@ -23,20 +23,28 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/cespare/xxhash/v2"
+	"github.com/pkg/errors"
+	promversion "github.com/prometheus/common/version"
 	appsv1 "k8s.io/api/apps/v1"
-
-	"github.com/hashicorp/go-version"
+	authv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
 	apiequality "k8s.io/apimachinery/pkg/api/equality"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/discovery"
+	"k8s.io/client-go/kubernetes"
 	clientappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/rest"
 	"k8s.io/client-go/tools/clientcmd"
 	"k8s.io/client-go/util/retry"
+
+	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
+	monitoringv1beta1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1beta1"
 )
 
 // KubeConfigEnv (optionally) specify the location of kubeconfig file
@@ -44,12 +52,39 @@ const KubeConfigEnv = "KUBECONFIG"
 
 var invalidDNS1123Characters = regexp.MustCompile("[^-a-z0-9]+")
 
+var scheme = runtime.NewScheme()
+
+var ErrPrerequiresitesFailed = errors.New("unmet prerequisites")
+
+func init() {
+	_ = monitoringv1.SchemeBuilder.AddToScheme(scheme)
+	_ = monitoringv1alpha1.SchemeBuilder.AddToScheme(scheme)
+	_ = monitoringv1beta1.SchemeBuilder.AddToScheme(scheme)
+}
+
+type CRDChecker struct {
+	kclient kubernetes.Interface
+}
+
+func NewCRDChecker(host string, tlsInsecure bool, tlsConfig *rest.TLSClientConfig) (*CRDChecker, error) {
+	cfg, err := NewClusterConfig(host, tlsInsecure, tlsConfig)
+	if err != nil {
+		return nil, errors.Wrap(err, "instantiating cluster config failed")
+	}
+
+	kclient, err := kubernetes.NewForConfig(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "instantiating kubernetes client failed")
+	}
+	return &CRDChecker{kclient: kclient}, nil
+}
+
 // PodRunningAndReady returns whether a pod is running and each container has
 // passed it's ready state.
 func PodRunningAndReady(pod v1.Pod) (bool, error) {
 	switch pod.Status.Phase {
 	case v1.PodFailed, v1.PodSucceeded:
-		return false, fmt.Errorf("pod completed")
+		return false, fmt.Errorf("pod completed with phase %s", pod.Status.Phase)
 	case v1.PodRunning:
 		for _, cond := range pod.Status.Conditions {
 			if cond.Type != v1.PodReady {
@@ -96,7 +131,74 @@ func NewClusterConfig(host string, tlsInsecure bool, tlsConfig *rest.TLSClientCo
 	cfg.QPS = 100
 	cfg.Burst = 100
 
+	cfg.UserAgent = fmt.Sprintf("PrometheusOperator/%s", promversion.Version)
+
 	return cfg, nil
+}
+
+// CheckPrerequisites checks if given resource's CRD is installed in the cluster and the operator
+// serviceaccount has the necessary RBAC verbs in the namespace list to reconcile it.
+func (cc CRDChecker) CheckPrerequisites(ctx context.Context, nsAllowList []string, verbs map[string][]string, sgv, resource string) error {
+	if err := cc.validateCRDInstallation(sgv, resource); err != nil {
+		return err
+	}
+
+	missingPermissions, err := cc.getMissingPermissions(ctx, nsAllowList, verbs)
+	if err != nil {
+		return err
+	}
+	if len(missingPermissions) > 0 {
+		return fmt.Errorf("%w: some permissions are missing: %v", ErrPrerequiresitesFailed, missingPermissions)
+	}
+
+	return nil
+}
+
+func (cc CRDChecker) validateCRDInstallation(sgv, resource string) error {
+	crdInstalled, err := IsAPIGroupVersionResourceSupported(cc.kclient.Discovery(), sgv, resource)
+	if err != nil {
+		return fmt.Errorf("failed to check if the API supports %s resource (apiGroup: %q): %w", resource, sgv, err)
+	}
+	if !crdInstalled {
+		return fmt.Errorf("%w: %s resource (apiGroup: %q) not installed", ErrPrerequiresitesFailed, resource, sgv)
+	}
+	return nil
+}
+
+// getMissingPermissions returns the RBAC permissions that the controller would need to be
+// granted to fulfill its mission. An empty map means that everything is ok.
+func (cc CRDChecker) getMissingPermissions(ctx context.Context, nsAllowList []string, verbs map[string][]string) (map[string][]string, error) {
+	var ssar *authv1.SelfSubjectAccessReview
+	var ssarResponse *authv1.SelfSubjectAccessReview
+	var err error
+	missingPermissions := map[string][]string{}
+
+	for _, ns := range nsAllowList {
+		for resource, verbs := range verbs {
+			for _, verb := range verbs {
+				ssar = &authv1.SelfSubjectAccessReview{
+					Spec: authv1.SelfSubjectAccessReviewSpec{
+						ResourceAttributes: &authv1.ResourceAttributes{
+							Verb:     verb,
+							Group:    monitoringv1alpha1.SchemeGroupVersion.Group,
+							Resource: resource,
+							// If ns is empty string, it will check cluster-wide
+							Namespace: ns,
+						},
+					},
+				}
+				ssarResponse, err = cc.kclient.AuthorizationV1().SelfSubjectAccessReviews().Create(ctx, ssar, metav1.CreateOptions{})
+				if err != nil {
+					return nil, err
+				}
+				if !ssarResponse.Status.Allowed {
+					missingPermissions[resource] = append(missingPermissions[resource], verb)
+				}
+			}
+		}
+	}
+
+	return missingPermissions, nil
 }
 
 func IsResourceNotFoundError(err error) bool {
@@ -199,30 +301,126 @@ func CreateOrUpdateSecret(ctx context.Context, secretClient clientv1.SecretInter
 	})
 }
 
-// GetMinorVersion returns the minor version as an integer
-func GetMinorVersion(dclient discovery.DiscoveryInterface) (int, error) {
-	v, err := dclient.ServerVersion()
+// IsAPIGroupVersionResourceSupported checks if given groupVersion and resource is supported by the cluster.
+//
+// you can exec `kubectl api-resources` to find groupVersion and resource.
+func IsAPIGroupVersionResourceSupported(discoveryCli discovery.DiscoveryInterface, groupversion string, resource string) (bool, error) {
+	apiResourceList, err := discoveryCli.ServerResourcesForGroupVersion(groupversion)
 	if err != nil {
-		return 0, err
+		if IsResourceNotFoundError(err) {
+			return false, nil
+		}
+		return false, err
 	}
 
-	ver, err := version.NewVersion(v.String())
-	if err != nil {
-		return 0, err
+	for _, apiResource := range apiResourceList.APIResources {
+		if resource == apiResource.Name {
+			return true, nil
+		}
 	}
-
-	return ver.Segments()[1], nil
+	return false, nil
 }
 
-// SanitizeVolumeName ensures that the given volume name is a valid DNS-1123 label
-// accepted by Kubernetes.
-func SanitizeVolumeName(name string) string {
+// ResourceNamer knows how to generate valid names for various Kubernetes resources.
+type ResourceNamer struct {
+	prefix string
+}
+
+// NewResourceNamerWithPrefix returns a ResourceNamer that adds a prefix
+// followed by an hyphen character to all resource names.
+func NewResourceNamerWithPrefix(p string) ResourceNamer {
+	return ResourceNamer{prefix: p}
+}
+
+func (rn ResourceNamer) sanitizedLabel(name string) string {
+	if rn.prefix != "" {
+		name = strings.TrimRight(rn.prefix, "-") + "-" + name
+	}
+
 	name = strings.ToLower(name)
 	name = invalidDNS1123Characters.ReplaceAllString(name, "-")
-	if len(name) > validation.DNS1123LabelMaxLength {
-		name = name[0:validation.DNS1123LabelMaxLength]
+	name = strings.Trim(name, "-")
+
+	return name
+}
+
+func isValidDNS1123Label(name string) error {
+	if errs := validation.IsDNS1123Label(name); len(errs) > 0 {
+		return errors.New(strings.Join(errs, ","))
 	}
-	return strings.Trim(name, "-")
+
+	return nil
+}
+
+// UniqueDNS1123Label returns a name that is a valid DNS-1123 label.
+// The returned name has a hash-based suffix to ensure uniqueness in case the
+// input name exceeds the 63-chars limit.
+func (rn ResourceNamer) UniqueDNS1123Label(name string) (string, error) {
+	// Hash the name and append the 8 first characters of the hash
+	// value to the resulting name to ensure that 2 names longer than
+	// DNS1123LabelMaxLength return unique names.
+	// E.g. long-63-chars-abc, long-63-chars-XYZ may be added to
+	// name since they are trimmed at long-63-chars, there will be 2
+	// resource entries with the same name.
+	// In practice, the hash is computed for the full name then trimmed to
+	// the first 8 chars and added to the end:
+	// * long-63-chars-abc -> first-54-chars-deadbeef
+	// * long-63-chars-XYZ -> first-54-chars-d3adb33f
+	xxh := xxhash.New()
+	if _, err := xxh.Write([]byte(name)); err != nil {
+		return "", err
+	}
+
+	h := fmt.Sprintf("-%x", xxh.Sum64())
+	h = h[:9]
+
+	name = rn.sanitizedLabel(name)
+
+	if len(name) > validation.DNS1123LabelMaxLength-9 {
+		name = name[:validation.DNS1123LabelMaxLength-9]
+	}
+
+	name = name + h
+	if errs := validation.IsDNS1123Label(name); len(errs) > 0 {
+		return "", errors.New(strings.Join(errs, ","))
+	}
+
+	return name, isValidDNS1123Label(name)
+}
+
+// DNS1123Label returns a name that is a valid DNS-1123 label.
+// It will sanitize a name, removing invalid characters and if
+// the name is bigger than 63 chars it will truncate it.
+func (rn ResourceNamer) DNS1123Label(name string) (string, error) {
+	name = rn.sanitizedLabel(name)
+
+	if len(name) > validation.DNS1123LabelMaxLength {
+		name = name[:validation.DNS1123LabelMaxLength]
+	}
+
+	return name, isValidDNS1123Label(name)
+}
+
+// AddTypeInformationToObject adds TypeMeta information to a runtime.Object based upon the loaded scheme.Scheme
+// See https://github.com/kubernetes/client-go/issues/308#issuecomment-700099260
+func AddTypeInformationToObject(obj runtime.Object) error {
+	gvks, _, err := scheme.ObjectKinds(obj)
+	if err != nil {
+		return fmt.Errorf("missing apiVersion or kind and cannot assign it; %w", err)
+	}
+
+	for _, gvk := range gvks {
+		if len(gvk.Kind) == 0 {
+			continue
+		}
+		if len(gvk.Version) == 0 || gvk.Version == runtime.APIVersionInternal {
+			continue
+		}
+		obj.GetObjectKind().SetGroupVersionKind(gvk)
+		break
+	}
+
+	return nil
 }
 
 func mergeOwnerReferences(old []metav1.OwnerReference, new []metav1.OwnerReference) []metav1.OwnerReference {

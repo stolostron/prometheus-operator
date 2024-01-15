@@ -7,7 +7,7 @@
           {
             alert: 'PrometheusOperatorListErrors',
             expr: |||
-              (sum by (controller,namespace) (rate(prometheus_operator_list_operations_failed_total{%(prometheusOperatorSelector)s}[10m])) / sum by (controller,namespace) (rate(prometheus_operator_list_operations_total{%(prometheusOperatorSelector)s}[10m]))) > 0.4
+              (sum by (%(groupLabels)s) (rate(prometheus_operator_list_operations_failed_total{%(prometheusOperatorSelector)s}[10m])) / sum by (%(groupLabels)s) (rate(prometheus_operator_list_operations_total{%(prometheusOperatorSelector)s}[10m]))) > 0.4
             ||| % $._config,
             labels: {
               severity: 'warning',
@@ -21,7 +21,7 @@
           {
             alert: 'PrometheusOperatorWatchErrors',
             expr: |||
-              (sum by (controller,namespace) (rate(prometheus_operator_watch_operations_failed_total{%(prometheusOperatorSelector)s}[10m])) / sum by (controller,namespace) (rate(prometheus_operator_watch_operations_total{%(prometheusOperatorSelector)s}[10m]))) > 0.4
+              (sum by (%(groupLabels)s) (rate(prometheus_operator_watch_operations_failed_total{%(prometheusOperatorSelector)s}[5m])) / sum by (%(groupLabels)s) (rate(prometheus_operator_watch_operations_total{%(prometheusOperatorSelector)s}[5m]))) > 0.4
             ||| % $._config,
             labels: {
               severity: 'warning',
@@ -49,7 +49,7 @@
           {
             alert: 'PrometheusOperatorReconcileErrors',
             expr: |||
-              (sum by (controller,namespace) (rate(prometheus_operator_reconcile_errors_total{%(prometheusOperatorSelector)s}[5m]))) / (sum by (controller,namespace) (rate(prometheus_operator_reconcile_operations_total{%(prometheusOperatorSelector)s}[5m]))) > 0.1
+              (sum by (%(groupLabels)s) (rate(prometheus_operator_reconcile_errors_total{%(prometheusOperatorSelector)s}[5m]))) / (sum by (%(groupLabels)s) (rate(prometheus_operator_reconcile_operations_total{%(prometheusOperatorSelector)s}[5m]))) > 0.1
             ||| % $._config,
             labels: {
               severity: 'warning',
@@ -77,7 +77,7 @@
           {
             alert: 'PrometheusOperatorNotReady',
             expr: |||
-              min by(namespace, controller) (max_over_time(prometheus_operator_ready{%(prometheusOperatorSelector)s}[5m]) == 0)
+              min by (%(groupLabels)s) (max_over_time(prometheus_operator_ready{%(prometheusOperatorSelector)s}[5m]) == 0)
             ||| % $._config,
             labels: {
               severity: 'warning',
@@ -116,8 +116,7 @@
               severity: 'warning',
             },
             annotations: {
-              description: 'Errors encountered while the {{$labels.pod}} config-reloader sidecar attempts to sync config in {{$labels.namespace}} namespace.
-As a result, configuration for service running in {{$labels.pod}} may be stale and cannot be updated anymore.',
+              description: 'Errors encountered while the {{$labels.pod}} config-reloader sidecar attempts to sync config in {{$labels.namespace}} namespace.\nAs a result, configuration for service running in {{$labels.pod}} may be stale and cannot be updated anymore.',
               summary: 'config-reloader sidecar has not had a successful reload for 10m',
             },
             'for': '10m',

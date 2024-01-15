@@ -17,22 +17,20 @@ package main
 import (
 	"bytes"
 	"flag"
-	"io/ioutil"
 	"log"
 	"os"
 	"path"
 	"path/filepath"
 
+	"github.com/pkg/errors"
+	v1 "k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
+	"sigs.k8s.io/yaml"
+
 	monitoring "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring"
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/versionutil"
-
-	"k8s.io/api/core/v1"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sYAML "k8s.io/apimachinery/pkg/util/yaml"
-
-	"github.com/ghodss/yaml"
-	"github.com/pkg/errors"
 )
 
 func main() {
@@ -88,7 +86,7 @@ func main() {
 			log.Fatalf("failed to encode ruleFile '%v': %v", ruleFile.Name, err.Error())
 		}
 
-		err = ioutil.WriteFile(path.Join(*ruleCRDSDestination, ruleFile.Name), encodedRuleFile, 0644)
+		err = os.WriteFile(path.Join(*ruleCRDSDestination, ruleFile.Name), encodedRuleFile, 0644)
 		if err != nil {
 			log.Fatalf("failed to write yaml manifest for rule file '%v': %v", ruleFile.Name, err.Error())
 		}

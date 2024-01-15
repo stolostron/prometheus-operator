@@ -1,5 +1,5 @@
 ---
-weight: 600
+weight: 209
 toc: true
 title: Troubleshooting
 menu:
@@ -9,8 +9,26 @@ lead: ""
 images: []
 draft: false
 description: Guide on troubleshooting the Prometheus Operator.
-date: "2021-03-08T08:49:31+00:00"
 ---
+
+### `CustomResourceDefinition "..." is invalid: metadata.annotations: Too long` issue
+
+When applying updated CRDs on a cluster, you may face the following error message:
+
+```bash
+$ kubectl apply -f $MANIFESTS
+The CustomResourceDefinition "prometheuses.monitoring.coreos.com" is invalid: metadata.annotations: Too long: must have at most 262144 bytes
+```
+
+The reason is that apply runs in the client by default and saves information into the object annotations but there's a hard limit on the size of annotations.
+
+The workaround is to use server-side apply which requires Kubernetes v1.22 at least.
+
+```bash
+kubectl apply --server-side --force-conflicts -f $MANIFESTS
+```
+
+If using ArgoCD, please refer to their [documentation](https://argo-cd.readthedocs.io/en/latest/user-guide/sync-options/#server-side-apply).
 
 ### RBAC on Google Container Engine (GKE)
 
@@ -48,9 +66,11 @@ When creating/deleting/modifying `ServiceMonitor` objects it is sometimes not as
 
 #### Overview of `ServiceMonitor` tagging and related elements
 
-A common problem related to `ServiceMonitor` identification by Prometheus is related to an incorrect tagging, that does not match the `Prometheus` custom resource definition scope, or lack of permission for the Prometheus `ServiceAccount` to *get, list, watch* `Services` and `Endpoints` from the target application being monitored. As a general guideline consider the diagram below, giving an example of a `Deployment` and `Service` called `my-app`, being monitored by Prometheus based on a `ServiceMonitor` named `my-service-monitor`:
+A common problem related to `ServiceMonitor` identification by Prometheus is related to the object's labels not matching the `Prometheus` custom resource definition scope, or lack of permission for the Prometheus `ServiceAccount` to *get, list, watch* `Services` and `Endpoints` from the target application being monitored. As a general guideline consider the diagram below, giving an example of a `Deployment` and `Service` called `my-app`, being monitored by Prometheus based on a `ServiceMonitor` named `my-service-monitor`:
 
-![flow diagram](custom-metrics-elements.png)
+<!-- do not change this link without verifying that the image will display correctly on https://prometheus-operator.dev -->
+
+![flow diagram](/img/custom-metrics-elements.png)
 
 Note: The `ServiceMonitor` references a `Service` (not a `Deployment`, or a `Pod`), by labels *and* by the port name in the `Service`. This *port name* is optional in Kubernetes, but must be specified for the `ServiceMonitor` to work. It is not the same as the port name on the `Pod` or container, although it can be.
 
@@ -61,6 +81,18 @@ Note: The `ServiceMonitor` references a `Service` (not a `Deployment`, or a `Pod
 ```sh
 kubectl -n monitoring get secret prometheus-k8s -ojson | jq -r '.data["prometheus.yaml.gz"]' | base64 -d | gunzip | grep "my-service-monitor"
 ```
+
+#### It is in the configuration but not on the Service Discovery page
+
+ServiceMonitors pointing to Services that do not exist (e.g. nothing matching `.spec.selector`) will lead to this ServiceMonitor not being added to the Service Discovery page. Check if you can find any Service with the selector you configured.
+
+If you use `.spec.selector.matchLabels` (instead of e.g. `.spec.selector.matchExpressions`), you can use this command to check for services matching the given label:
+
+```
+kubectl get services -l "$(kubectl get servicemonitors -n "<namespace of your ServiceMonitor>" "<name of your ServiceMonitor>" -o template='{{ $first := 1 }}{{ range $key, $value := .spec.selector.matchLabels }}{{ if eq $first 0 }},{{end}}{{ $key }}={{ $value }}{{ $first = 0 }}{{end}}')"
+```
+
+Note: this command does not take namespaces into account. If your ServiceMonitor selects a single namespace or all namespaces, you can just add that to the `kubectl get services` command (using `-n $namespace` or `-A` for all namespaces).
 
 ### Prometheus kubelet metrics server returned HTTP status 403 Forbidden
 
@@ -94,45 +126,67 @@ sed -e "s/- --address=127.0.0.1/- --address=0.0.0.0/" -i /etc/kubernetes/manifes
 The ServiceMonitor expects to use the port name as defined on the Service. So, using the Service example from the
 diagram above, we have this Service definition:
 
-```yaml
+```yaml mdox-exec="cat example/user-guides/getting-started/example-app-service.yaml"
 kind: Service
+apiVersion: v1
 metadata:
+  name: example-app
   labels:
-    k8s-app: my-app
-  name: my-app
-...
-  spec:
-    ports:
-      - name: metrics
-        port: 8080
-    selector:
-      k8s-app: my-app
+    app: example-app
+spec:
+  selector:
+    app: example-app
+  ports:
+  - name: web
+    port: 8080
 ```
 
 We would then define the service monitor using `metrics` as the port not `"8080"`. E.g.
 
 **CORRECT**
 
-```yaml
+```yaml mdox-exec="cat example/user-guides/getting-started/example-app-service-monitor.yaml"
+apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: my-app
+  name: example-app
+  labels:
+    team: frontend
 spec:
-...
+  selector:
+    matchLabels:
+      app: example-app
   endpoints:
-    - port: metrics
+  - port: web
 ```
 
 **INCORRECT**
 
 ```yaml
+apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
-  name: my-app
+  name: example-app
+  labels:
+    team: frontend
 spec:
-...
+  selector:
+    matchLabels:
+      app: example-app
   endpoints:
-    - port: "8080"
+  - port: "8080"
 ```
 
 The incorrect example will give an error along these lines `spec.endpoints.port in body must be of type string: "integer"`
+
+### Prometheus/Alertmanager pods stuck in terminating loop with healthy start up logs
+
+It is usually a sign that more than one operator wants to manage the resource.
+
+Check if several operators are running on the cluster:
+
+```console
+kubectl get pods --all-namespaces | grep 'prom.*operator'
+```
+
+Check the logs of the matching pods to see if they manage the same resource.

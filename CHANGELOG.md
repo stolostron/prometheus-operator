@@ -1,3 +1,324 @@
+## 0.68.0 / 2023-09-06
+
+* [FEATURE] Add support for Webex receiver to the AlertmanagerConfig CRD. #5305
+* [FEATURE] Add support for Bot Token File for Telegram receiver in AlermanagerConfig CRD. #5882
+* [FEATURE] Add support for MetricRelabelings to the ScrapeConfig CRD. #5805
+* [FEATURE] Add support for DNS service discovery fields to the ScrapeConfig CRD. #5866
+* [FEATURE] Add support for `keep_dropped_targets` to Prometheus, PrometheusAgent, ServiceMonitor, PodMonitor, Probe and ScrapeConfig CRDs. #5897
+* [FEATURE] Don't trigger reconcile loops if statefulsets have different `revisionHistoryLimit`. #5773
+* [ENHANCEMENT] Decrease CPU usage when reconciling ThanosRuler resources. #5784
+* [BUGFIX] Fix sharding in Probe CRD. #5735
+* [BUGFIX] Fix text-only email configs in AlertmanagerConfig CRD. #5804
+* [BUGFIX] Fix rejecting PodMonitor, ServiceMonitor, Probes and ScrapeConfigs with invalid relabelings. #5841 #5856
+* [BUGFIX] Fix Kubernetes Service Discovery in ScrapeConfig CRD. #5871
+* [BUGFIX] Fix reserved labels being overriden by external labels. #5888
+* [BUGFIX] Fix updating Status of Prometheus, Alertmanager and ThanosRuler even the operator fails to update their statefulsets. #5891
+
+## 0.67.1 / 2023-08-03
+
+* [BUGFIX] Avoid skipping `AlertmanagerConfig` resources for Alertmanager versions prior v0.25.0. #5788
+
+## 0.67.0 / 2023-07-27
+
+* [FEATURE] Add `spec.scheme` field to the ScrapeConfig CRD. #5679
+* [FEATURE] Add `spec.params` field to the ScrapeConfig CRD. #5750
+* [FEATURE] Add `spec.scrapeInterval` and `spec.scrapeTimeout` fields to the ScrapeConfig CRD. #5742
+* [FEATURE] Add support for TLS configuration to the ScrapeConfig CRD. #5710
+* [FEATURE] Add support for scrape limits to the ScrapeConfig CRD. #5658
+* [FEATURE] Add support for Kubernetes node service discovery to the ScrapeConfig CRD. #5675
+* [FEATURE] Add support for Consul service discovery to the ScrapeConfig CRD. #5709
+* [FEATURE] Add support for ScrapeConfig objects to `spec.excludedFromEnforcement` (Prometheus CRD). #5577
+* [FEATURE] Add support for global scrape limits to the Prometheus CRD. #5646
+* [FEATURE] Add `spec.alertmanagerConfiguration.smtp` field to the Alertmanager CRD. #5649
+* [FEATURE] Add support for Discord integration to the AlertmanagerConfig CRD. #5671
+* [ENHANCEMENT] (jsonnet) expose resource settings for the reloader. #5768
+* [BUGFIX] Avoid deadlock of the config reloader when the initial configuration is invalid. #5743
+* [BUGFIX] Reload the Alertmanager configuration when templates are modified. #5727
+
+## 0.66.0 / 2023-06-14
+
+After research, we noticed how the default CPU requests of the config-reloader container were too high compared to the effective usage. We decided to decrease the default CPU requests from `100m` to `10m`. For most environments, this won't make a difference but if you need to increase the values, you can use the `-config-reloader-cpu-request` and `-config-reloader-cpu-limit` CLI arguments of the Prometheus operator.
+
+* [CHANGE] Decrease the default CPU requests for the config-reloader container from `100m` to `10m`. #5539
+* [FEATURE] Add `spec.alertmanagerConfiguration.global.PagerdutyURL` to the `Alertmanager` CRD. #5469
+* [FEATURE] Add `spec.volumeMounts` to the `ThanosRuler` CRD. #5541
+* [FEATURE] Add `spec.remoteWrite.sendNativeHistograms` to `Prometheus` and `PrometheusAgent` CRDs. #5564
+* [FEATURE] Add `spec.tracingConfig` to `Prometheus` and `PrometheusAgent` CRDs. #5591 #5640
+* [FEATURE] Add `followRedirects` field to the `RemoteRead` configuration. #5612
+* [FEATURE] Add `spec.automountServiceAccountToken` to the `Alertmanager` CRD. #5474
+* [FEATURE] Support `keep_firing_for` fields for `PrometheusRule` CRD. #5651
+* [FEATURE] Allow to add custom annotations to all resources managed by the operator. #5626
+* [FEATURE] Add `BasicAuth` and `Authorization` support to `ScrapeConfig` CRD. #5642
+* [ENHANCEMENT] Add `-kubelet-selector` CLI argument to filter the Kubernetes nodes by labels. #5641
+* [BUGFIX] Fix bug with logs that don't end with new line(`\n`) characters. #5566
+* [BUGFIX] Fix Prometheus and Alertmanager not picking up the web server's certificate after renewal. #5535
+* [BUGFIX] Fix config-reloader not handling SIGTERM signal. #5617
+* [BUGFIX] Fix Thanos volume name when using VolumeClaimTemplate in `Prometheus` CRD. #5596
+* [BUGFIX] Fix WAL Compression configuration for `PrometheusAgent` CRD. #5625
+* [BUGFIX] Fix DNS name resolution for individual ThanosRuler pods. #5632
+
+## 0.65.2 / 2023-05-31
+
+* [BUGFIX] Fix relabeling issue in `ScrapeConfig` CRD. #5611
+
+## 0.65.1 / 2023-05-05
+
+* [BUGFIX] Fix panic when ScrapeConfig CRD is not installed. #5550
+
+## 0.65.0 / 2023-05-04
+
+The main change introduced by this release is the new v1alpha1 `ScrapeConfig` CRD.
+This implements the [proposal](https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/proposals/202212-scrape-config.md)
+documented in [#5279](https://github.com/prometheus-operator/prometheus-operator/pull/5279)
+and provides a Kubernetes native API to create and manage additional scrape configurations.
+
+To try it, follow the following steps:
+1. Install the new CRD in the cluster (see
+   `example/prometheus-operator-crd/monitoring.coreos.com_scrapeconfigs.yaml`).
+2. Update the Prometheus operator's RBAC permissions to manage `ScrapeConfig` resources
+   (see `example/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml`).
+
+**NOTE**: if these conditions aren't met, the operator will start but it won't
+be able to reconcile the `ScrapeConfig` resources.
+
+* [FEATURE] Add the `status` subresource for the `ThanosRuler` CRD. #5520
+* [FEATURE] Add `spec.web.timeout` and `spec.web.getConcurrency` to the `Alertmanager` CRD. #5478
+* [FEATURE] Add `spec.groups[].limit` to the `Prometheus` CRD. #4999
+* [FEATURE] Add ScrapeConfig CRD. #5335
+* [ENHANCEMENT] Set a default for `seccompProfile` on the operator and webhook Deployments to `RuntimeDefault`. #5477
+* [ENHANCEMENT] Add optional liveness and readiness probes to `prometheus-config-reloader`. This can be enabled via the `--enable-config-reloader-probes` CLI flag. #5449
+* [BUGFIX] Don't start the `PrometheusAgent` controller if the CRD isn't present or the operator lacks permissions. #5476
+* [BUGFIX] Declare `spec.rules` optional in `PrometheusRule` CRD. #5481
+* [BUGFIX] Fix incorrect metric counter value for failed sync status. #5533
+
+## 0.64.1 / 2023-04-24
+
+* [BUGFIX] Fix panic when scraping `/metrics` with PrometheusAgent resources declared. #5511
+
+## 0.64.0 / 2023-03-29
+
+This release provides first-class support for running Prometheus in agent mode
+with the new `PrometheusAgent` CRD. As the v1alpha1 version tells it, we don't
+recommend using it in production but we're eager to hear all possible feedback.
+
+To try it, follow the following steps:
+1. Install the new CRD in the cluster (see
+   `example/prometheus-operator-crd/monitoring.coreos.com_prometheusagents.yaml`).
+2. Update the Prometheus operator's RBAC permissions to manage PrometheusAgents resources
+   (see `example/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml`).
+
+**NOTE**: if these conditions aren't met, the operator will start but it won't
+be able to reconcile the PrometheusAgent resources.
+
+For the first time, the container images associated to this release are signed
+using [sigstore](https://www.sigstore.dev/).
+
+* [CHANGE] Remove the `/apis` endpoints from the operator's web server. #5396
+* [CHANGE] Set default default value of `spec.portName` to `web`. #5350
+* [FEATURE] Add v1alpha1 `PrometheusAgent` CRD to run Prometheus in agent mode. #5385
+* [FEATURE] Add `--reload-timeout` argument to the config-reloader binary which controls how long the program will wait for the reload operation to complete (default: 30s). #5349
+* [ENHANCEMENT] Set web server's `ReadTimeout` and `ReadHeaderTimeout` to 30s for Prometheus operator and config-reloader to avoid potential slowloris attacks. #5340
+* [ENHANCEMENT] Add support for `DropEqual` and `KeepEqual` relabeling actions. #5368
+* [ENHANCEMENT] Drop invalid `PrometheusRule` objects instead of failing the reconciliation of Prometheus and ThanosRuler objects. #5221
+* [ENHANCEMENT] Add `spec.thanos.blockSize` field to the `Prometheus` CRD. #5360
+* [ENHANCEMENT] Add `spec.thanos.configTimeout` and `spec.thanos.configInterval` to the Prometheus CRD. #5399
+* [ENHANCEMENT] Add `spec.alertmanagerConfiguration.global.slackApiUrl` field to the `Alertmanager` CRD. #5383
+* [ENHANCEMENT] Add `spec.alertmanagerConfiguration.global.opsGenieApiUrl` and `spec.alertmanagerConfiguration.global.opsGenieApiKey` fields to the `Alertmanager` CRD. #5422
+* [ENHANCEMENT] Reduce the operator's memory usage by using metadata informers for Kubernetes secrets and configmaps. #5424 #5448
+* [BUGFIX] Add `init-config-reloader` init container to avoid a restart of the Alertmanager's `config-reloader` container when the pod starts. #5358
+
+## 0.63.0 / 2023-02-08
+
+* [CHANGE] Use `tmpfs` to store `Prometheus` and `Alertmanager` configuration. #5311
+* [FEATURE] Add `status` subresource to the `Alertmanager` CRD. #5270
+* [FEATURE] Add `spec.additionalArgs` to the `ThanosRuler` CRD. #5293
+* [ENHANCEMENT] Add `spec.web.maxConnections` to the `Prometheus` CRD. #5175
+* [BUGFIX] Fix unsupported types in Alertmanager route sanitizer log lines. #5296
+* [BUGFIX] Fix `ThanosRuler` StatefulSet re-creation bug when labels are specified. #5318
+
+## 0.62.0 / 2023-01-04
+
+* [CHANGE] Use `spec.version` of the Prometheus object as the image's tag if the image name is untagged. #5171
+* [FEATURE] Generate "apply configuration" types. #5243
+* [FEATURE] Add `spec.podTargetLabels` field to the Prometheus CRD for adding pod target labels to every PodMonitor/ServiceMonitor. #5206
+* [FEATURE] Add `spec.version` field to the ThanosRuler CRD. #5177
+* [ENHANCEMENT] Add `basicAuth` field to the Prometheus CRD for alerting configuration of Prometheus. #5170
+* [ENHANCEMENT] Add `spec.imagePullPolicy` to Prometheus, Alertmanager and ThanosRuler CRDs. #5203
+* [ENHANCEMENT] Add `activeTimeIntervals` field to AlertmanagerConfig CRD. #5198
+* [ENHANCEMENT] Support `time_intervals` and `active_time_intervals` in the Alertmanager configurations. #5135
+* [ENHANCEMENT] Support new fields in the Alertmanager v0.25.0 configuration. #5254 #5263
+
+## 0.61.1 / 2022-11-24
+
+* [BUGFIX] Fixed a regression that caused the ThanosRuler statefulsets to be stuck after upgrading the operator to v0.61.0. #5183
+
+## 0.61.0 / 2022-11-16
+
+* [CHANGE] Updated `RuleGroup` description and add validation for the CRD. #5072
+* [CHANGE] Removed validations in the operator that are already covered at the CRD level. #5108
+* [CHANGE] jsonnet: Enforced existence of the TLS secret for the admission webhook deployment. #5112
+* [CHANGE] jsonnet: Changed default port of the admission webhook service from 8443 to 443. #5112
+* [CHANGE] Added a filter for non-running pods in the `ServiceMonitor` CRD. #5149
+* [FEATURE] Added `spec.attachMetadata.node` in the `ServiceMonitor` CRD. #5147
+* [ENHANCEMENT] Updated `ProbeTLSConfig` and `SafeTLSConfig` description. #5081
+* [ENHANCEMENT] Updated admission webhook deployment's jsonnet to avoid down-time on updates. #5099
+* [ENHANCEMENT] Added the `filterExternalLabels` field to the remote read configuration of the `Prometheus` CRD. #5142
+* [ENHANCEMENT] Added `enableHttp2` field to `AlertingEndpoints` #5152
+* [ENHANCEMENT] Updated `ThanosRuler` arguments (`QueryConfig`, `AlertManagerConfig`, `ObjectStorageConfig` and `TracingConfig`) to be directly read from secrets instead of using ENV vars. #5122
+* [ENHANCEMENT] Add `alertmanagerConfigMatcherStrategy` to `Alertmanager` CRD in order to disable auto-generated namespace matchers. #5084
+* [BUGFIX] Ignore `PartialResponseStrategy` in the `Prometheus` CRD. This field is only applicable for the Thanos Ruler. #5125
+
+## 0.60.1 / 2022-10-10
+
+* [BUGFIX] Fixed configuration when `spec.tsdb.outOfOrderTimeWindow` is set in the Prometheus CRD. #5078
+
+## 0.60.0 / 2022-10-06
+
+* [CHANGE] Added `filterRunning` field to the PodMonitor CRD. By default, non-running pods are dropped by the Prometheus service discovery. To preserve the old behavior and keep pods which aren't running, set `filterRunning: false`. #5049
+* [FEATURE] Added `grpcListenLocal` and `httpListenLocal` fields to the Thanos sidecar configuration of the Prometheus CRD. #5045
+* [FEATURE] Added `hostNetwork` field to the Prometheus CRD. #5010
+* [FEATURE] Added `spec.tsdb.outOfOrderTimeWindow` field to the Prometheus CRD to allow out-of-order samples in TSDB. #5071
+* [ENHANCEMENT] Added columns showing the Prometheus conditions to the output of `kubectl get prometheus`. #5055
+* [ENHANCEMENT] Added `observedGeneration` field to the Prometheus status conditions. #5005
+
+## 0.59.2 / 2022-09-20
+
+* [CHANGE/BUGFIX] Removed `FOWNER` capability from the Thanos sidecar. #5030
+
+## 0.59.1 / 2022-09-12
+
+* [BUGFIX] Fixed secret and configmap volume names that need to be mounted in additional containers. #5000
+* [BUGFIX] Removed `CAP_FOWNER` capability for the Thanos sidecar when not required. #5004
+* [BUGFIX] Removed the `CAP_` prefix of the `FOWNER` capability on Thanos sidecar. #5014
+
+## 0.59.0 / 2022-09-02
+
+* [FEATURE] Added validations for timeout and time settings of alertmanager at CRD level. #4898
+* [FEATURE] Added support for global `resolveTimeout` and `httpConfig` in Alertmanager CRD. #4622
+* [FEATURE] Added support for `additionalArgs` field to the Prometheus CRD for Prometheus, Alertmanager and Thanos sidecar. #4863
+* [ENHANCEMENT] Added `tracingConfigFile` option to ThanosRuler CRD. #4962
+* [BUGFIX] Fixed compress alertmanager secret to circumvent maximum size limit of 1048576 bytes. #4906
+* [BUGFIX] Fixed namespace enforcement exclusion on newly created Prometheus objects. #4915
+* [BUGFIX] Fixed `CAP_FOWNER` capability to Thanos sidecar container. #4931
+* [BUGFIX] Fixed `spec.query.maxSamples` and `spec.query.maxConcurrency` fields of Prometheus CRD. #4951
+* [BUGFIX] Fixed Thanos sidecar connectivity issue when Prometheus TLS is enabled. #4954
+* [BUGFIX] Fixed Prometheus and Alertmanager Pods not created when Secret name exceeds 63 characters. #4988
+
+## 0.58.0 / 2022-07-19
+
+* [FEATURE] Add validations for timeout and time settings of alertmanager at CRD level. #4827, #4881
+* [FEATURE] Extend the PrometheusSpec to allow to configure the `max_exemplars`. #4834
+* [FEATURE] Add support for web TLS configuration for Alertmanager CRD. #4868
+* [ENHANCEMENT] Add support for `uppercase`, `lowercase`, and `CamelCase` relabel actions. #4840, #4873
+* [ENHANCEMENT] Added support for `enable_http2` in endpoint scrape configuration. #4836
+* [BUGFIX] Fixed missing conversion of the `followRedirects` field in HTTP configuration for AlertmanagerConfig v1beta1. #4854
+* [BUGFIX] fix AlertmanagerConfig.Spec.Route nil panic. #4853
+* [BUGFIX] Optimise warning log message during sanitization of OpsGenie configuration. #4833
+
+## 0.57.0 / 2022-06-02
+
+The main change introduced by this release is a new v1beta1 API version for the
+AlertmanagerConfig CRD.
+
+Changes compared to the v1alpha1 API:
+* Renamed `spec.muteTimeIntervals` field to `to spec.timeIntervals`.
+* Removed `regex` field from the `Matcher` type.
+* Replaced all `v1.SecretKeySelector` types by the `SecretKeySelector` type
+  * Removed `optional` field.
+  * `name` and `key` fields are required.
+
+As a pre-requisite, you need to deploy the admission webhook and configure the
+conversion webhook in the AlertmanagerConfig CRD object so that users can use
+both v1alpha1 and v1beta1 versions at the same time. There are more details in
+`Documentation/user-guides/webhook.md` about the webhook configuration.
+
+Because of the conversion webhook requirement, the new version is an opt-in
+feature: the `bundle.yaml` file and the manifests from
+`example/prometheus-operator-crd` don't deploy the new API version (the
+manifests to enable the v1beta1 version are under the
+`example/prometheus-operator-crd-full` directory). We will wait until v0.59.0
+(at least) before enabling the new API version by default.
+
+* [CHANGE] Added validations at the API level for the time-based fields of the ThanosRuler CRD. #4815
+* [CHANGE] Added validations at the API level for the OpsGenie's `responders` field of the AlertmanagerConfig CRD. #4725
+* [FEATURE] Added v1beta1 version for AlertmanagerConfig CRD. #4709
+* [FEATURE] Added support for Telegram receiver in the AlertmanagerConfig CRD. #4726
+* [FEATURE] Added `updateAlerts` field to the OpsGenie configuration of the AlertmanagerConfig CRD. #4726
+* [FEATURE] Added `hostAliases` field to the the Alertmanager, Prometheus and ThanosRuler CRDs. #4787
+* [ENHANCEMENT] Added configuration option in the jsonnet mixins to specify the aggregation labels. #4814
+* [ENHANCEMENT] Added `attachMetadata` field to the PodMonitor CRD. #4792
+* [BUGFIX] Fixed the curl command for exec probes when `listenLocal` is set to true in the Prometheus object. It avoids temporary service outage due to long WAL replays. #4804
+
+## 0.56.3 / 2022-05-23
+
+* [BUGFIX] Fixed errors for Alertmanager configurations using the new `entity`, `actions` and `opsgenie_api_key_file` fields. #4797
+* [BUGFIX] Fixed high CPU usage by reducing the number of number of reconciliations on Prometheus objects. #4798 #4806
+
+## 0.56.2 / 2022-05-09
+
+* [BUGFIX] Fix StatefulSet spec's generation to be determistic when `spec.containers` is not empty. #4772
+
+## 0.56.1 / 2022-05-03
+
+* [BUGFIX] Avoid unnecessary updates of the Prometheus StatefulSet object. #4762
+
+## 0.56.0 / 2022-04-20
+
+* [CHANGE] Added validation at the API level for size-based fields of the Prometheus CRD. #4661
+* [CHANGE] Added validation at the API level for log level and format fields of the Alertmanager, Prometheus and ThanosRuler CRDs. #4638
+* [CHANGE] Added validation at the API level for duration and time-based fields of the Prometheus CRD. #4684
+* [CHANGE] Added shortnames for custom resources (`amcfg` for AlertmanagerConfig, `am` for Alertmanager, `pmon` for PodMonitor, `prb` for Probe, `prom` for Prometheus, `smon` for ServiceMonitor, `ruler` for Thanos Ruler). #4680
+* [FEATURE] Added `status` subresource to the Prometheus CRD. #4580
+* [ENHANCEMENT] Added `excludedFromEnforce` field to the Prometheus CRD. It allows to define PodMonitor, ServiceMonitor, Probe or PrometheusRule objects for which the namespace label enforcement (if enabled) should not be applied. This deprecates `prometheusRulesExcludedFromEnforce` which is still supported but users are encouraged to migrate to the new field. #4397
+* [ENHANCEMENT] Added `enableRemoteWriteReceiver` field to the Prometheus CRD. #4633
+* [ENHANCEMENT] Added `entity` and `actions` fields for the OpsGenie receiver to the AlertmanagerConfig CRD. #4697
+* [ENHANCEMENT] Added `prometheus_operator_reconcile_duration_seconds` histogram metric. #4706
+* [BUGFIX] Added support for `opsgenie_api_key_file` and `api_key_file` in the generated Alertmanager configuration. #4666 #4738
+
+## 0.55.1 / 2022-03-26
+
+* [BUGFIX] Fixed Prometheus configuration when `spec.queryLogFile` has no path ("query.log" for instance). #4683
+
+## 0.55.0 / 2022-03-09
+
+* [CHANGE] Enabled read-only root filesystem for containers generated from the Prometheus, Alertmanager and ThanosRuler objects. #4552
+* [CHANGE] Disabled privilege escalation for the containers generated from Prometheus, Alertmanager and ThanosRuler objects. #4552
+* [CHANGE] Dropped all capabilities for the containers generated from Prometheus, Alertmanager and ThanosRuler objects. #4552
+* [CHANGE] Added `emptyDir` volume to the Prometheus statefulset when `spec.queryLogFile` is only a base filename (e.g. `query.log` as opposed to `/tmp/query.log`). When the path contains a full path, a volume + volume mount should be explicitly given in the Prometheus spec since the root file system is now read-only. #4566
+* [CHANGE/BUGFIX] Added skip TLS verify for the config-reloader HTTP client when informing Prometheus/Alertmanager on a config reload (partial fix for #4273). #4592
+* [CHANGE] Switched using the `endpointslice` role for Prometheus by default if it is supported by the Kubernetes API. #4535
+* [FEATURE] Added standalone admission webhook. #4494
+* [FEATURE] Support the definition of Alertmanager configuration via AlertManagerConfig instead of Kubernetes secret (EXPERIMENTAL). #4220
+* [FEATURE] Support sharding for Probe objects. #4587
+* [ENHANCEMENT] Restore Prometheus StatefulSet liveness probe so that deadlocks are detected and recovered from. #4387, #4534
+* [ENHANCEMENT] Added `-alertmanager-config-namespaces` CLI flag to the operator. #4455, #4619
+* [ENHANCEMENT] `remoteWrite` and `remoteRead` fields of the Prometheus CRD not considered experimental anymore. #4555
+* [ENHANCEMENT] Added support for follow_redirects in endpoint scrape configuration. #4563
+* [ENHANCEMENT] Added support for Oauth2 in AlertmanagerConfig CRD. #4501
+* [ENHANCEMENT] Improved logging when the given Prometheus version doesn't support some CR fields. #4571
+* [ENHANCEMENT] Added `__tmp_ingress_address` label to preserve the initial host address of the ingress object. #4603
+* [ENHANCEMENT] Fixed potential name collisions in Alertmanager configuration when merging AlertmanagerConfig objects. #4626
+* [BUGFIX] Fixed panic when validating `Probe`. #4541
+* [BUGFIX] Added validation for sourceLabels in relabel configuration. #4568
+* [BUGFIX] Allow retention to be set only by size. #4590
+
+## 0.54.1 / 2022-02-24
+
+* [BUGFIX] Updated relabelConfig validation to accept Prometheus default config on labeldrop relabelConfig. #4579
+* [BUGFIX] Fixed relabelConfigs for labelmap action. #4574
+
+## 0.54.0 / 2022-01-26
+
+* [FEATURE] Support SNS Receiver in AlertmanagerConfig CR. #4468
+* [ENHANCEMENT] Specify SA token automounting on pod-level for operator and prometheus operand. #4514
+* [ENHANCEMENT] Support following redirects and Oauth2 in HTTP Client config in raw alertmanager config secret. #4499
+* [ENHANCEMENT] Add Replicas column for Thanos Ruler. #4496
+* [ENHANCEMENT] Set User-Agent for the kubernetes client. #4506
+* [BUGFIX] Avoid race during recreation of StatefulSet(s). #4504
+* [BUGFIX] Add validation for proberSpec `url` field in `ProbeSpec`. #4483
+* [BUGFIX] Add validation for relabel configs. #4429
+* [BUGFIX] Add validation for scrapeTimeout validation. #4491
+
 ## 0.53.1 / 2021-12-20
 
 * [BUGFIX] Fixed the validation pattern for the `february` month in the AlertManagerConfig CRD. #4458

@@ -5,10 +5,9 @@ metadata:
 webhooks:
   - clientConfig:
       service:
-        name: prometheus-operator
+        name: prometheus-operator-admission-webhook
         namespace: default
         path: /admission-prometheusrules/mutate
-
     failurePolicy: Fail
     name: prometheusrulemutate.monitoring.coreos.com
     namespaceSelector: {}
