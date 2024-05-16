@@ -30,7 +30,7 @@ contribution. See the [DCO](DCO) file for details.
 
 # Email and Chat
 
-The project currently uses the [Kubernetes Slack](https://slack.k8s.io/):
+The project currently uses the [Kubernetes Slack](https://kubernetes.slack.com):
 - [#prometheus-operator](https://kubernetes.slack.com/archives/CFFDS2Z7F)
 - [#prometheus-operator-dev](https://kubernetes.slack.com/archives/C01B03QCSMN)
 
@@ -42,7 +42,7 @@ are very busy and read the mailing lists.
 The project also holds bi-weekly public meetings where maintainers,
 contributors and users of the Prometheus Operator and kube-prometheus can
 discuss issues, pull requests or any topic related to the projects. The
-meetings happen at 09:00 UTC on Monday, check the [online
+meetings happen at 11:00 UTC on Monday, check the [online
 notes](https://docs.google.com/document/d/1-fjJmzrwRpKmSPHtXN5u6VZnn39M28KqyQGBEJsqUOk/edit?usp=sharing)
 to know the exact dates and the connection details.
 
@@ -60,8 +60,7 @@ This is a rough outline of what a contributor's workflow looks like:
 - Make commits of logical units.
 - Make sure your commit messages are in the proper format (see below).
 - Push your changes to a topic branch in your fork of the repository.
-- Make sure the tests pass, and add any new tests as appropriate.
-- If the tests are checking long strings such as YAML, JSON or any other complex content, ensure you're using [golden files](https://pkg.go.dev/gotest.tools/v3/golden).
+- Make sure the tests pass, and add any new tests as appropriate. ([Testing guidelines](TESTING.md))
 - Submit a pull request to the original repository.
 
 Many files (documentation, manifests, ...) in this repository are auto-generated. For instance, `bundle.yaml` is generated from the *Jsonnet* files in `/jsonnet/prometheus-operator`. Before submitting a pull request, make sure that you've executed `make generate` and committed the generated changes.
@@ -108,6 +107,21 @@ The first line is the subject and should be no longer than 70 characters, the
 second line is always blank, and other lines should be wrapped at 80 characters.
 This allows the message to be easier to read on GitHub as well as in various
 Git tools.
+
+# Local Development
+
+If you want to run Prometheus Operator on your local environment, you can follow the steps below.
+
+1. First start a Kubernetes cluster. We recommend [KinD](https://kind.sigs.k8s.io/) because it is lightweight (it can run on small notebooks) and this is what the project's CI uses. [MiniKube](https://minikube.sigs.k8s.io/docs/start/) is also another option.
+
+2. Run the utility script [scripts/run-external.sh](scripts/run-external.sh), it will check all the requirements and run your local version of the Prometheus Operator on your Kind cluster.
+
+```
+./scripts/run-external.sh -c
+```
+3. You should now be able to see the logs from the operator in your terminal. The Operator is successully running in your local system and can be debugged, checked for behaviour etc.
+
+Similarly, if you work on a specific branch, you can run the `scripts/run-external.sh` script in this branch to deploy it.
 
 # Proposal Process
 

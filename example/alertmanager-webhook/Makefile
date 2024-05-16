@@ -3,8 +3,8 @@ TAG ?= latest
 
 .PHONY: build
 build:
-	GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -tags netgo -o linux/amd64/ .
-	GOOS=linux GOARCH=arm64 CGO_ENABLED=1 go build -tags netgo -o linux/arm64/ .
+	GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -tags netgo -o linux/amd64/ .
+	GOOS=linux GOARCH=arm64 CGO_ENABLED=0 go build -tags netgo -o linux/arm64/ .
 
 .PHONY: push
 push: build

@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/prometheus/model/labels"
 	"github.com/prometheus/prometheus/model/textparse"
 	v1 "k8s.io/api/core/v1"
@@ -38,20 +37,19 @@ import (
 func SourceToIOReader(source string) (io.Reader, error) {
 	if strings.HasPrefix(source, "http") {
 		return URLToIOReader(source)
-	} else {
-		return PathToOSFile(source)
 	}
+	return PathToOSFile(source)
 }
 
 func PathToOSFile(relativePath string) (*os.File, error) {
 	path, err := filepath.Abs(relativePath)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed generate absolute file path of %s", relativePath))
+		return nil, fmt.Errorf("failed generate absolute file path of %s: %w", relativePath, err)
 	}
 
 	manifest, err := os.Open(path)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("failed to open file %s", path))
+		return nil, fmt.Errorf("failed to open file %s: %w", path, err)
 	}
 
 	return manifest, nil
@@ -61,7 +59,7 @@ func URLToIOReader(url string) (io.Reader, error) {
 	var resp *http.Response
 	timeout := 30 * time.Second
 
-	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(_ context.Context) (bool, error) {
 		var err error
 		resp, err = http.Get(url)
 		if err == nil && resp.StatusCode == 200 {
@@ -71,11 +69,12 @@ func URLToIOReader(url string) (io.Reader, error) {
 	})
 
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf(
-			"waiting for %v to return a successful status code timed out. Last response from server was: %v",
+		return nil, fmt.Errorf(
+			"waiting for %v to return a successful status code timed out. Last response from server was: %v: %w",
 			url,
 			resp,
-		))
+			err,
+		)
 	}
 
 	return resp.Body, nil
@@ -132,7 +131,7 @@ func (f *Framework) WaitForPodsRunImage(ctx context.Context, namespace string, e
 
 func WaitForHTTPSuccessStatusCode(timeout time.Duration, url string) error {
 	var resp *http.Response
-	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(ctx context.Context) (bool, error) {
+	err := wait.PollUntilContextTimeout(context.Background(), time.Second, timeout, false, func(_ context.Context) (bool, error) {
 		var err error
 		resp, err = http.Get(url)
 		if err == nil && resp.StatusCode == 200 {
@@ -141,11 +140,15 @@ func WaitForHTTPSuccessStatusCode(timeout time.Duration, url string) error {
 		return false, nil
 	})
 
-	return errors.Wrap(err, fmt.Sprintf(
-		"waiting for %v to return a successful status code timed out. Last response from server was: %v",
-		url,
-		resp,
-	))
+	if err != nil {
+		return fmt.Errorf(
+			"waiting for %v to return a successful status code timed out. Last response from server was: %v: %w",
+			url,
+			resp,
+			err,
+		)
+	}
+	return nil
 }
 
 func podRunsImage(p v1.Pod, image string) bool {
@@ -212,10 +215,13 @@ func (f *Framework) ProxyPostPod(namespace, resourceName, path, body string) *re
 
 // GetMetricVal get a particular metric value from a pod.
 // When portNumberOfName is "", default port will be used to access metrics endpoint.
-func (f *Framework) GetMetricVal(ctx context.Context, ns, podName, portNumberOrName, metricName string) (float64, error) {
+func (f *Framework) GetMetricVal(ctx context.Context, protocol, ns, podName, portNumberOrName, metricName string) (float64, error) {
 	resourceName := podName
+	if protocol == "" {
+		protocol = "http"
+	}
 	if portNumberOrName != "" {
-		resourceName = fmt.Sprintf("%s:%s", podName, portNumberOrName)
+		resourceName = fmt.Sprintf("%s:%s:%s", protocol, podName, portNumberOrName)
 	}
 
 	request := f.ProxyGetPod(ns, resourceName, "/metrics")
@@ -224,7 +230,7 @@ func (f *Framework) GetMetricVal(ctx context.Context, ns, podName, portNumberOrN
 		return 0, err
 	}
 
-	parser := textparse.NewPromParser(resp)
+	parser := textparse.NewPromParser(resp, labels.NewSymbolTable())
 	for {
 		entry, err := parser.Next()
 		if err != nil {

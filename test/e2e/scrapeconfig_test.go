@@ -30,7 +30,7 @@ import (
 	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
 )
 
-// testScrapeConfigCreation tests multiple ScrapeConfig definitions
+// testScrapeConfigCreation tests multiple ScrapeConfig definitions.
 func testScrapeConfigCreation(t *testing.T) {
 	skipPrometheusTests(t)
 	t.Parallel()
@@ -90,7 +90,7 @@ func testScrapeConfigCreation(t *testing.T) {
 			spec: monitoringv1alpha1.ScrapeConfigSpec{
 				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
 					{
-						Role: "Node",
+						Role: monitoringv1alpha1.Role("Node"),
 					},
 				},
 			},
@@ -153,7 +153,7 @@ func testScrapeConfigCreation(t *testing.T) {
 // testScrapeConfigLifecycle tests 3 things:
 // 1. Creating a ScrapeConfig and checking that 2 targets appear in Prometheus
 // 2. Updating that ScrapeConfig by adding a target and checking that 3 targets appear in Prometheus
-// 3. Deleting that ScrapeConfig and checking that 0 targets appear in Prometheus
+// 3. Deleting that ScrapeConfig and checking that 0 targets appear in Prometheus.
 func testScrapeConfigLifecycle(t *testing.T) {
 	skipPrometheusTests(t)
 
@@ -162,7 +162,17 @@ func testScrapeConfigLifecycle(t *testing.T) {
 	ns := framework.CreateNamespace(context.Background(), t, testCtx)
 	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, ns)
 
-	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, []string{ns}, nil, []string{ns}, nil, false, true, true)
+	_, err := framework.CreateOrUpdatePrometheusOperator(
+		context.Background(),
+		ns,
+		[]string{ns},
+		nil,
+		[]string{ns},
+		nil,
+		false,
+		true, // clusterrole
+		true,
+	)
 	require.NoError(t, err)
 
 	p := framework.MakeBasicPrometheus(ns, "prom", "group", 1)
@@ -214,6 +224,101 @@ func testScrapeConfigLifecycle(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func testScrapeConfigLifecycleInDifferentNS(t *testing.T) {
+	skipPrometheusTests(t)
+
+	testCtx := framework.NewTestCtx(t)
+	defer testCtx.Cleanup(t)
+
+	// The ns where the prometheus CR will reside
+	promns := framework.CreateNamespace(context.Background(), t, testCtx)
+	// The ns where the scrapeConfig will reside
+	scns := framework.CreateNamespace(context.Background(), t, testCtx)
+	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, promns)
+	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, scns)
+
+	_, err := framework.CreateOrUpdatePrometheusOperator(
+		context.Background(),
+		promns,
+		[]string{scns},
+		nil,
+		[]string{promns},
+		nil,
+		false,
+		true, // clusterrole
+		true,
+	)
+	require.NoError(t, err)
+
+	// Make a prometheus object in promns which will select any ScrapeConfig resource with
+	// "group": "sc" and/or "kubernetes.io/metadata.name": <scns>
+	p := framework.MakeBasicPrometheus(promns, "prom", scns, 1)
+	p.Spec.ScrapeConfigNamespaceSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"kubernetes.io/metadata.name": scns,
+		},
+	}
+
+	p.Spec.ScrapeConfigSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"group": "sc",
+		},
+	}
+
+	// Make the Prometheus selection surface thin
+	p.Spec.PodMonitorSelector = nil
+	p.Spec.PodMonitorNamespaceSelector = nil
+	p.Spec.ServiceMonitorSelector = nil
+	p.Spec.ServiceMonitorNamespaceSelector = nil
+	p.Spec.RuleSelector = nil
+	p.Spec.RuleNamespaceSelector = nil
+
+	_, err = framework.CreatePrometheusAndWaitUntilReady(context.Background(), promns, p)
+	require.NoError(t, err)
+
+	// 1. Create a ScrapeConfig in scns and check that its targets appear in Prometheus
+	sc := framework.MakeBasicScrapeConfig(scns, "scrape-config")
+	sc.ObjectMeta.Labels = map[string]string{
+		"group": "sc"}
+
+	sc.Spec.StaticConfigs = []monitoringv1alpha1.StaticConfig{
+		{
+			Targets: []monitoringv1alpha1.Target{"target1:9090", "target2:9090"},
+		},
+	}
+	_, err = framework.CreateScrapeConfig(context.Background(), scns, sc)
+	require.NoError(t, err)
+
+	// Check that the targets appear in Prometheus
+	err = framework.WaitForActiveTargets(context.Background(), promns, "prometheus-operated", 2)
+	require.NoError(t, err)
+
+	// 2. Update the ScrapeConfig and add a target. Then, check that 3 targets appear in Prometheus.
+	sc, err = framework.GetScrapeConfig(context.Background(), scns, "scrape-config")
+	require.NoError(t, err)
+
+	sc.Spec.StaticConfigs = []monitoringv1alpha1.StaticConfig{
+		{
+			Targets: []monitoringv1alpha1.Target{"target1:9090", "target2:9090", "target3:9090"},
+		},
+	}
+
+	_, err = framework.UpdateScrapeConfig(context.Background(), scns, sc)
+	require.NoError(t, err)
+
+	// Check that the targets appear in Prometheus
+	err = framework.WaitForActiveTargets(context.Background(), promns, "prometheus-operated", 3)
+	require.NoError(t, err)
+
+	// 3. Remove the ScrapeConfig and check that the targets disappear in Prometheus
+	err = framework.DeleteScrapeConfig(context.Background(), scns, "scrape-config")
+	require.NoError(t, err)
+
+	// Check that the targets disappeared in Prometheus
+	err = framework.WaitForActiveTargets(context.Background(), promns, "prometheus-operated", 0)
+	require.NoError(t, err)
+}
+
 // testPromOperatorStartsWithoutScrapeConfigCRD deletes the ScrapeConfig CRD from the cluster and then starts
 // prometheus-operator to check that it doesn't crash.
 func testPromOperatorStartsWithoutScrapeConfigCRD(t *testing.T) {
@@ -239,7 +344,7 @@ func testPromOperatorStartsWithoutScrapeConfigCRD(t *testing.T) {
 
 	pl, err := framework.KubeClient.CoreV1().Pods(ns).List(context.Background(), opts)
 	require.NoError(t, err)
-	require.Equalf(t, 1, len(pl.Items), "expected 1 Prometheus Operator pods, but got %v", len(pl.Items))
+	require.Lenf(t, pl.Items, 1, "expected 1 Prometheus Operator pods, but got %v", len(pl.Items))
 
 	restarts, err := framework.GetPodRestartCount(context.Background(), ns, pl.Items[0].GetName())
 	require.NoError(t, err)
@@ -254,7 +359,7 @@ func testPromOperatorStartsWithoutScrapeConfigCRD(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// testScrapeConfigKubernetesNodeRole tests whether Kubernetes node monitoring works as expected
+// testScrapeConfigKubernetesNodeRole tests whether Kubernetes node monitoring works as expected.
 func testScrapeConfigKubernetesNodeRole(t *testing.T) {
 	testCtx := framework.NewTestCtx(t)
 	defer testCtx.Cleanup(t)
@@ -267,20 +372,11 @@ func testScrapeConfigKubernetesNodeRole(t *testing.T) {
 	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, []string{ns}, nil, []string{ns}, nil, false, true, true)
 	require.NoError(t, err)
 
-	p := framework.MakeBasicPrometheus(ns, "prom", "group", 1)
-	p.Spec.ScrapeConfigSelector = &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"role": "scrapeconfig",
-		},
-	}
-	_, err = framework.CreatePrometheusAndWaitUntilReady(context.Background(), ns, p)
-	require.NoError(t, err)
-
 	// For prometheus to be able to scrape nodes it needs to able to authenticate
 	// using mTLS certificates issued for the ServiceAccount "prometheus"
 	secretName := "scraping-tls"
 	createServiceAccountSecret(t, "prometheus", ns)
-	createMTLSSecret(t, secretName, ns)
+	createMutualTLSSecret(t, secretName, ns)
 
 	sc := framework.MakeBasicScrapeConfig(ns, "scrape-config")
 	sc.Spec.Scheme = ptr.To("HTTPS")
@@ -321,10 +417,19 @@ func testScrapeConfigKubernetesNodeRole(t *testing.T) {
 
 	sc.Spec.KubernetesSDConfigs = []monitoringv1alpha1.KubernetesSDConfig{
 		{
-			Role: "Node",
+			Role: monitoringv1alpha1.Role("Node"),
 		},
 	}
 	_, err = framework.CreateScrapeConfig(context.Background(), ns, sc)
+	require.NoError(t, err)
+
+	p := framework.MakeBasicPrometheus(ns, "prom", "group", 1)
+	p.Spec.ScrapeConfigSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"role": "scrapeconfig",
+		},
+	}
+	_, err = framework.CreatePrometheusAndWaitUntilReady(context.Background(), ns, p)
 	require.NoError(t, err)
 
 	// Check that the targets appear in Prometheus and does proper scrapping
@@ -341,7 +446,7 @@ func testScrapeConfigKubernetesNodeRole(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// testScrapeConfigDNSSDConfig tests whether DNS SD based monitoring works as expected
+// testScrapeConfigDNSSDConfig tests whether DNS SD based monitoring works as expected.
 func testScrapeConfigDNSSDConfig(t *testing.T) {
 	testCtx := framework.NewTestCtx(t)
 	defer testCtx.Cleanup(t)
@@ -349,15 +454,6 @@ func testScrapeConfigDNSSDConfig(t *testing.T) {
 	framework.SetupPrometheusRBAC(context.Background(), t, testCtx, ns)
 
 	_, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, []string{ns}, nil, []string{ns}, nil, false, true, true)
-	require.NoError(t, err)
-
-	p := framework.MakeBasicPrometheus(ns, "prom", "group", 1)
-	p.Spec.ScrapeConfigSelector = &metav1.LabelSelector{
-		MatchLabels: map[string]string{
-			"role": "scrapeconfig",
-		},
-	}
-	_, err = framework.CreatePrometheusAndWaitUntilReady(context.Background(), ns, p)
 	require.NoError(t, err)
 
 	sc := framework.MakeBasicScrapeConfig(ns, "scrape-config")
@@ -369,6 +465,15 @@ func testScrapeConfigDNSSDConfig(t *testing.T) {
 		},
 	}
 	_, err = framework.CreateScrapeConfig(context.Background(), ns, sc)
+	require.NoError(t, err)
+
+	p := framework.MakeBasicPrometheus(ns, "prom", "group", 1)
+	p.Spec.ScrapeConfigSelector = &metav1.LabelSelector{
+		MatchLabels: map[string]string{
+			"role": "scrapeconfig",
+		},
+	}
+	_, err = framework.CreatePrometheusAndWaitUntilReady(context.Background(), ns, p)
 	require.NoError(t, err)
 
 	// Check that the targets appear in Prometheus and does proper scrapping

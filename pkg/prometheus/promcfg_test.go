@@ -18,12 +18,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"strings"
 	"testing"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/go-openapi/swag"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v2"
 	"gotest.tools/v3/golden"
@@ -68,7 +66,7 @@ func mustNewConfigGenerator(t *testing.T, p *monitoringv1.Prometheus) *ConfigGen
 	if p == nil {
 		p = &monitoringv1.Prometheus{}
 	}
-	logger := level.NewFilter(log.NewLogfmtLogger(os.Stderr), level.AllowWarn())
+	logger := level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowWarn())
 
 	cg, err := NewConfigGenerator(log.With(logger, "test", t.Name()), p, false)
 	require.NoError(t, err)
@@ -101,13 +99,18 @@ func TestConfigGeneration(t *testing.T) {
 
 func TestGlobalSettings(t *testing.T) {
 	var (
-		expectedBodySizeLimit         monitoringv1.ByteSize = "1000MB"
-		expectedSampleLimit           uint64                = 10000
-		expectedTargetLimit           uint64                = 1000
-		expectedLabelLimit            uint64                = 50
-		expectedLabelNameLengthLimit  uint64                = 40
-		expectedLabelValueLengthLimit uint64                = 30
-		expectedkeepDroppedTargets    uint64                = 50
+		expectedBodySizeLimit         monitoringv1.ByteSize         = "1000MB"
+		expectedSampleLimit           uint64                        = 10000
+		expectedTargetLimit           uint64                        = 1000
+		expectedLabelLimit            uint64                        = 50
+		expectedLabelNameLengthLimit  uint64                        = 40
+		expectedLabelValueLengthLimit uint64                        = 30
+		expectedkeepDroppedTargets    uint64                        = 50
+		expectedscrapeProtocols       []monitoringv1.ScrapeProtocol = []monitoringv1.ScrapeProtocol{
+			"OpenMetricsText1.0.0",
+			"OpenMetricsText0.0.1",
+			"PrometheusText0.0.4",
+		}
 	)
 
 	for _, tc := range []struct {
@@ -115,6 +118,7 @@ func TestGlobalSettings(t *testing.T) {
 		EvaluationInterval          monitoringv1.Duration
 		ScrapeInterval              monitoringv1.Duration
 		ScrapeTimeout               monitoringv1.Duration
+		ScrapeProtocols             []monitoringv1.ScrapeProtocol
 		ExternalLabels              map[string]string
 		PrometheusExternalLabelName *string
 		ReplicaExternalLabelName    *string
@@ -217,6 +221,14 @@ func TestGlobalSettings(t *testing.T) {
 			KeepDroppedTargets: &expectedkeepDroppedTargets,
 			Golden:             "valid_global_config_with_keep_dropped_targets.golden",
 		},
+		{
+			Scenario:           "valid global config with scrape protocols",
+			Version:            "v2.49.0",
+			ScrapeInterval:     "30s",
+			EvaluationInterval: "30s",
+			ScrapeProtocols:    expectedscrapeProtocols,
+			Golden:             "valid_global_config_with_scrape_protocols.golden",
+		},
 	} {
 
 		p := &monitoringv1.Prometheus{
@@ -225,6 +237,7 @@ func TestGlobalSettings(t *testing.T) {
 				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 					ScrapeInterval:              tc.ScrapeInterval,
 					ScrapeTimeout:               tc.ScrapeTimeout,
+					ScrapeProtocols:             tc.ScrapeProtocols,
 					ExternalLabels:              tc.ExternalLabels,
 					PrometheusExternalLabelName: tc.PrometheusExternalLabelName,
 					ReplicaExternalLabelName:    tc.ReplicaExternalLabelName,
@@ -299,7 +312,7 @@ func TestNamespaceSetCorrectly(t *testing.T) {
 						MatchNames: []string{"test1", "test2"},
 					},
 					AttachMetadata: &monitoringv1.AttachMetadata{
-						Node: true,
+						Node: ptr.To(true),
 					},
 				},
 			},
@@ -408,7 +421,7 @@ func TestNamespaceSetCorrectlyForPodMonitor(t *testing.T) {
 				MatchNames: []string{"test"},
 			},
 			AttachMetadata: &monitoringv1.AttachMetadata{
-				Node: true,
+				Node: ptr.To(true),
 			},
 		},
 	}
@@ -834,7 +847,6 @@ func TestK8SSDConfigGeneration(t *testing.T) {
 				BasicAuth:       &monitoringv1.BasicAuth{},
 				BearerToken:     "bearer_token",
 				BearerTokenFile: "bearer_token_file",
-				TLSConfig:       nil,
 			},
 			&assets.Store{
 				BasicAuthAssets: map[string]assets.BasicAuthCredentials{
@@ -922,10 +934,9 @@ func TestAlertmanagerBearerToken(t *testing.T) {
 
 func TestAlertmanagerBasicAuth(t *testing.T) {
 	for _, tc := range []struct {
-		name           string
-		version        string
-		expectedConfig string
-		golden         string
+		name    string
+		version string
+		golden  string
 	}{
 		{
 			name:    "Valid Prom Version",
@@ -1010,6 +1021,86 @@ func TestAlertmanagerBasicAuth(t *testing.T) {
 	}
 }
 
+func TestAlertmanagerSigv4(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version string
+		golden  string
+	}{
+		{
+			name:    "Valid Prom Version",
+			version: "2.48.0",
+			golden:  "AlertmanagerSigv4_Valid_Prom_Version.golden",
+		},
+		{
+			name:    "Invalid Prom Version",
+			version: "2.47.0",
+			golden:  "AlertmanagerSigv4_Invalid_Prom_Version.golden",
+		},
+	} {
+		p := defaultPrometheus()
+		p.Spec.Version = tc.version
+		p.Spec.Alerting = &monitoringv1.AlertingSpec{
+			Alertmanagers: []monitoringv1.AlertmanagerEndpoints{
+				{
+					Name:      "alertmanager-main",
+					Namespace: "default",
+					Port:      intstr.FromString("web"),
+					Sigv4: &monitoringv1.Sigv4{
+						Profile: "profilename",
+						RoleArn: "arn:aws:iam::123456789012:instance-profile/prometheus",
+						AccessKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "sigv4-secret",
+							},
+							Key: "access-key",
+						},
+						SecretKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "sigv4-secret",
+							},
+							Key: "secret-key",
+						},
+						Region: "us-central-0",
+					},
+				},
+			},
+		}
+
+		cg := mustNewConfigGenerator(t, p)
+		cfg, err := cg.GenerateServerConfiguration(
+			context.Background(),
+			p.Spec.EvaluationInterval,
+			p.Spec.QueryLogFile,
+			p.Spec.RuleSelector,
+			p.Spec.Exemplars,
+			p.Spec.TSDB,
+			p.Spec.Alerting,
+			p.Spec.RemoteRead,
+			nil,
+			nil,
+			nil,
+			nil,
+			&assets.Store{
+				SigV4Assets: map[string]assets.SigV4Credentials{
+					"alertmanager/auth/0": {
+						AccessKeyID: "access-key",
+						SecretKeyID: "secret-key",
+					},
+				},
+			},
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		golden.Assert(t, string(cfg), tc.golden)
+	}
+}
+
 func TestAlertmanagerAPIVersion(t *testing.T) {
 	p := defaultPrometheus()
 	p.Spec.Alerting = &monitoringv1.AlertingSpec{
@@ -1056,7 +1147,7 @@ func TestAlertmanagerTimeoutConfig(t *testing.T) {
 				Namespace:  "default",
 				Port:       intstr.FromString("web"),
 				APIVersion: "v2",
-				Timeout:    (*monitoringv1.Duration)(ptr.To("60s")),
+				Timeout:    ptr.To(monitoringv1.Duration("60s")),
 			},
 		},
 	}
@@ -1122,7 +1213,7 @@ func TestAlertmanagerEnableHttp2(t *testing.T) {
 						Namespace:   "default",
 						Port:        intstr.FromString("web"),
 						APIVersion:  "v2",
-						EnableHttp2: swag.Bool(tc.enableHTTP2),
+						EnableHttp2: ptr.To(tc.enableHTTP2),
 					},
 				},
 			}
@@ -1738,7 +1829,7 @@ func TestSettingHonorTimestampsInServiceMonitor(t *testing.T) {
 					TargetLabels: []string{"example", "env"},
 					Endpoints: []monitoringv1.Endpoint{
 						{
-							HonorTimestamps: swag.Bool(false),
+							HonorTimestamps: ptr.To(false),
 							Port:            "web",
 							Interval:        "30s",
 						},
@@ -1756,90 +1847,7 @@ func TestSettingHonorTimestampsInServiceMonitor(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  honor_timestamps: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "SettingHonorTimestampsInServiceMonitor.golden")
 }
 
 func TestSettingHonorTimestampsInPodMonitor(t *testing.T) {
@@ -1866,7 +1874,7 @@ func TestSettingHonorTimestampsInPodMonitor(t *testing.T) {
 					PodTargetLabels: []string{"example", "env"},
 					PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
 						{
-							HonorTimestamps: swag.Bool(false),
+							HonorTimestamps: ptr.To(false),
 							Port:            "web",
 							Interval:        "30s",
 						},
@@ -1883,71 +1891,243 @@ func TestSettingHonorTimestampsInPodMonitor(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "SettingHonorTimestampsInPodMonitor.golden")
+}
 
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  honor_timestamps: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_pod_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
+func TestSettingTrackTimestampsStalenessInServiceMonitor(t *testing.T) {
+	p := defaultPrometheus()
 
-	require.Equal(t, expected, string(cfg))
+	cg := mustNewConfigGenerator(t, p)
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		p.Spec.EvaluationInterval,
+		p.Spec.QueryLogFile,
+		p.Spec.RuleSelector,
+		p.Spec.Exemplars,
+		p.Spec.TSDB,
+		p.Spec.Alerting,
+		p.Spec.RemoteRead,
+		map[string]*monitoringv1.ServiceMonitor{
+			"testservicemonitor1": {
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testservicemonitor1",
+					Namespace: "default",
+				},
+				Spec: monitoringv1.ServiceMonitorSpec{
+					TargetLabels: []string{"example", "env"},
+					Endpoints: []monitoringv1.Endpoint{
+						{
+							TrackTimestampsStaleness: ptr.To(false),
+							Port:                     "web",
+							Interval:                 "30s",
+						},
+					},
+				},
+			},
+		},
+		nil,
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "SettingTrackTimestampsStalenessInServiceMonitor.golden")
+}
+
+func TestSettingTrackTimestampsStalenessInPodMonitor(t *testing.T) {
+	p := defaultPrometheus()
+
+	cg := mustNewConfigGenerator(t, p)
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		p.Spec.EvaluationInterval,
+		p.Spec.QueryLogFile,
+		p.Spec.RuleSelector,
+		p.Spec.Exemplars,
+		p.Spec.TSDB,
+		p.Spec.Alerting,
+		p.Spec.RemoteRead,
+		nil,
+		map[string]*monitoringv1.PodMonitor{
+			"testpodmonitor1": {
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "testpodmonitor1",
+					Namespace: "default",
+				},
+				Spec: monitoringv1.PodMonitorSpec{
+					PodTargetLabels: []string{"example", "env"},
+					PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
+						{
+							TrackTimestampsStaleness: ptr.To(false),
+							Port:                     "web",
+							Interval:                 "30s",
+						},
+					},
+				},
+			},
+		},
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "SettingTrackTimestampsStalenessInPodMonitor.golden")
+}
+
+func TestSettingScrapeProtocolsInServiceMonitor(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version string
+		scrape  []monitoringv1.ScrapeProtocol
+		golden  string
+	}{
+		{
+			name:    "setting ScrapeProtocols in ServiceMonitor with prometheus old version",
+			version: "v2.48.0",
+			scrape: []monitoringv1.ScrapeProtocol{
+				monitoringv1.ScrapeProtocol("OpenMetricsText1.0.0"),
+				monitoringv1.ScrapeProtocol("OpenMetricsText0.0.1"),
+			},
+			golden: "SettingScrapeProtocolsInServiceMonitor_OldVersion.golden",
+		},
+		{
+			name:    "setting ScrapeProtocols in ServiceMonitor with prometheus new version",
+			version: "v2.49.0",
+			scrape: []monitoringv1.ScrapeProtocol{
+				monitoringv1.ScrapeProtocol("OpenMetricsText1.0.0"),
+				monitoringv1.ScrapeProtocol("OpenMetricsText0.0.1"),
+			},
+			golden: "SettingScrapeProtocolsInServiceMonitor_NewVersion.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := defaultPrometheus()
+			p.Spec.CommonPrometheusFields.Version = tc.version
+
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				p.Spec.RuleSelector,
+				p.Spec.Exemplars,
+				p.Spec.TSDB,
+				p.Spec.Alerting,
+				p.Spec.RemoteRead,
+				map[string]*monitoringv1.ServiceMonitor{
+					"testservicemonitor1": {
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "testservicemonitor1",
+							Namespace: "default",
+						},
+						Spec: monitoringv1.ServiceMonitorSpec{
+							TargetLabels:    []string{"example", "env"},
+							ScrapeProtocols: tc.scrape,
+							Endpoints: []monitoringv1.Endpoint{
+								{
+									HonorTimestamps: ptr.To(false),
+									Port:            "web",
+									Interval:        "30s",
+								},
+							},
+						},
+					},
+				},
+				nil,
+				nil,
+				nil,
+				&assets.Store{},
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestSettingScrapeProtocolsInPodMonitor(t *testing.T) {
+	for _, tc := range []struct {
+		name    string
+		version string
+		scrape  []monitoringv1.ScrapeProtocol
+		golden  string
+	}{
+		{
+			name:    "setting ScrapeProtocols in PodMonitor with prometheus old version",
+			version: "v2.48.0",
+			scrape: []monitoringv1.ScrapeProtocol{
+				monitoringv1.ScrapeProtocol("OpenMetricsText1.0.0"),
+				monitoringv1.ScrapeProtocol("OpenMetricsText0.0.1"),
+			},
+			golden: "SettingScrapeProtocolsInPodMonitor_OldVersion.golden",
+		},
+		{
+			name:    "setting ScrapeProtocols in PodMonitor with prometheus new version",
+			version: "v2.49.0",
+			scrape: []monitoringv1.ScrapeProtocol{
+				monitoringv1.ScrapeProtocol("OpenMetricsText1.0.0"),
+				monitoringv1.ScrapeProtocol("OpenMetricsText0.0.1"),
+			},
+			golden: "SettingScrapeProtocolsInPodMonitor_NewVersion.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			p := defaultPrometheus()
+			p.Spec.CommonPrometheusFields.Version = tc.version
+
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				p.Spec.RuleSelector,
+				p.Spec.Exemplars,
+				p.Spec.TSDB,
+				p.Spec.Alerting,
+				p.Spec.RemoteRead,
+				nil,
+				map[string]*monitoringv1.PodMonitor{
+					"testpodmonitor1": {
+						ObjectMeta: metav1.ObjectMeta{
+							Name:      "testpodmonitor1",
+							Namespace: "default",
+						},
+						Spec: monitoringv1.PodMonitorSpec{
+							PodTargetLabels: []string{"example", "env"},
+							ScrapeProtocols: tc.scrape,
+							PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
+								{
+									TrackTimestampsStaleness: ptr.To(false),
+									Port:                     "web",
+									Interval:                 "30s",
+								},
+							},
+						},
+					},
+				},
+				nil,
+				nil,
+				&assets.Store{},
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
 }
 
 func TestHonorTimestampsOverriding(t *testing.T) {
@@ -1974,7 +2154,7 @@ func TestHonorTimestampsOverriding(t *testing.T) {
 					TargetLabels: []string{"example", "env"},
 					Endpoints: []monitoringv1.Endpoint{
 						{
-							HonorTimestamps: swag.Bool(true),
+							HonorTimestamps: ptr.To(true),
 							Port:            "web",
 							Interval:        "30s",
 						},
@@ -1992,90 +2172,7 @@ func TestHonorTimestampsOverriding(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  honor_timestamps: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "HonorTimestampsOverriding.golden")
 }
 
 func TestSettingHonorLabels(t *testing.T) {
@@ -2122,89 +2219,7 @@ func TestSettingHonorLabels(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: true
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "SettingHonorLabels.golden")
 }
 
 func TestHonorLabelsOverriding(t *testing.T) {
@@ -2252,89 +2267,7 @@ func TestHonorLabelsOverriding(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "HonorLabelsOverriding.golden")
 }
 
 func TestTargetLabels(t *testing.T) {
@@ -2377,89 +2310,7 @@ func TestTargetLabels(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "TargetLabels.golden")
 }
 
 func TestEndpointOAuth2(t *testing.T) {
@@ -2486,25 +2337,13 @@ func TestEndpointOAuth2(t *testing.T) {
 		},
 	}
 
-	expectedCfg := strings.TrimSpace(`
-oauth2:
-    client_id: test_client_id
-    client_secret: test_client_secret
-    token_url: http://test.url
-    scopes:
-    - scope 1
-    - scope 2
-    endpoint_params:
-      param1: value1
-      param2: value2`)
-
 	testCases := []struct {
 		name              string
 		sMons             map[string]*monitoringv1.ServiceMonitor
 		pMons             map[string]*monitoringv1.PodMonitor
 		probes            map[string]*monitoringv1.Probe
 		oauth2Credentials map[string]assets.OAuth2Credentials
-		expectedCfg       string
+		golden            string
 	}{
 		{
 			name: "service monitor with oauth2",
@@ -2533,7 +2372,7 @@ oauth2:
 					ClientSecret: "test_client_secret",
 				},
 			},
-			expectedCfg: expectedCfg,
+			golden: "service_monitor_with_oauth2.golden",
 		},
 		{
 			name: "pod monitor with oauth2",
@@ -2562,7 +2401,7 @@ oauth2:
 					ClientSecret: "test_client_secret",
 				},
 			},
-			expectedCfg: expectedCfg,
+			golden: "pod_monitor_with_oauth2.golden",
 		},
 		{
 			name: "probe monitor with oauth2",
@@ -2591,7 +2430,7 @@ oauth2:
 					ClientSecret: "test_client_secret",
 				},
 			},
-			expectedCfg: expectedCfg,
+			golden: "probe_monitor_with_oauth2.golden",
 		},
 	}
 
@@ -2625,11 +2464,7 @@ oauth2:
 				nil,
 			)
 			require.NoError(t, err)
-			result := string(cfg)
-
-			if !strings.Contains(result, tt.expectedCfg) {
-				t.Fatalf("expected Prometheus configuration to contain:\n %s\nFull config:\n %s", tt.expectedCfg, result)
-			}
+			golden.Assert(t, string(cfg), tt.golden)
 		})
 	}
 }
@@ -2677,89 +2512,7 @@ func TestPodTargetLabels(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_pod_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_pod_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "PodTargetLabels.golden")
 }
 
 func TestPodTargetLabelsFromPodMonitor(t *testing.T) {
@@ -2805,70 +2558,7 @@ func TestPodTargetLabelsFromPodMonitor(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_label_example
-    target_label: example
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_pod_label_env
-    target_label: env
-    regex: (.+)
-    replacement: ${1}
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "PodTargetLabelsFromPodMonitor.golden")
 }
 
 func TestPodTargetLabelsFromPodMonitorAndGlobal(t *testing.T) {
@@ -2915,70 +2605,7 @@ func TestPodTargetLabelsFromPodMonitorAndGlobal(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_label_local
-    target_label: local
-    regex: (.+)
-    replacement: ${1}
-  - source_labels:
-    - __meta_kubernetes_pod_label_global
-    target_label: global
-    regex: (.+)
-    replacement: ${1}
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "PodTargetLabelsFromPodMonitorAndGlobal.golden")
 }
 
 func TestEmptyEndpointPorts(t *testing.T) {
@@ -3023,80 +2650,7 @@ func TestEmptyEndpointPorts(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	// If this becomes an endless sink of maintenance, then we should just
-	// change this to check that just the `bearer_token_file` is set with
-	// something like json-path.
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/test/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_service_label_foo
-    - __meta_kubernetes_service_labelpresent_foo
-    regex: (bar);true
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "EmptyEndpointPorts.golden")
 }
 
 func generateTestConfig(t *testing.T, version string) ([]byte, error) {
@@ -3552,22 +3106,22 @@ func TestHonorTimestamps(t *testing.T) {
 			Expected:                "{}\n",
 		},
 		{
-			UserHonorTimestamps:     swag.Bool(false),
+			UserHonorTimestamps:     ptr.To(false),
 			OverrideHonorTimestamps: true,
 			Expected:                "honor_timestamps: false\n",
 		},
 		{
-			UserHonorTimestamps:     swag.Bool(false),
+			UserHonorTimestamps:     ptr.To(false),
 			OverrideHonorTimestamps: false,
 			Expected:                "honor_timestamps: false\n",
 		},
 		{
-			UserHonorTimestamps:     swag.Bool(true),
+			UserHonorTimestamps:     ptr.To(true),
 			OverrideHonorTimestamps: true,
 			Expected:                "honor_timestamps: false\n",
 		},
 		{
-			UserHonorTimestamps:     swag.Bool(true),
+			UserHonorTimestamps:     ptr.To(true),
 			OverrideHonorTimestamps: false,
 			Expected:                "honor_timestamps: true\n",
 		},
@@ -3590,174 +3144,68 @@ func TestHonorTimestamps(t *testing.T) {
 	}
 }
 
+func TestTrackTimestampsStaleness(t *testing.T) {
+	type testCase struct {
+		UserTrackTimestampsStaleness *bool
+		Expected                     string
+	}
+
+	testCases := []testCase{
+		{
+			UserTrackTimestampsStaleness: nil,
+			Expected:                     "{}\n",
+		},
+		{
+			UserTrackTimestampsStaleness: ptr.To(false),
+			Expected:                     "track_timestamps_staleness: false\n",
+		},
+		{
+			UserTrackTimestampsStaleness: ptr.To(true),
+			Expected:                     "track_timestamps_staleness: true\n",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run("", func(t *testing.T) {
+			cg := mustNewConfigGenerator(t, &monitoringv1.Prometheus{
+				Spec: monitoringv1.PrometheusSpec{
+					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+						Version: "2.48.0",
+					},
+				},
+			})
+
+			hl, _ := yaml.Marshal(cg.AddTrackTimestampsStaleness(yaml.MapSlice{}, tc.UserTrackTimestampsStaleness))
+			require.Equal(t, tc.Expected, string(hl))
+		})
+	}
+}
+
 func TestSampleLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  sample_limit: %d
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		enforcedLimit int
 		limit         int
-		expected      string
+		golden        string
 	}{
 		{
 			enforcedLimit: -1,
 			limit:         -1,
-			expected:      expectNoLimit,
+			golden:        "SampleLimits_NoLimit.golden",
 		},
 		{
 			enforcedLimit: 1000,
 			limit:         -1,
-			expected:      fmt.Sprintf(expectLimit, 1000),
+			golden:        "SampleLimits_Limit-1.golden",
 		},
 		{
 			enforcedLimit: 1000,
 			limit:         2000,
-			expected:      fmt.Sprintf(expectLimit, 1000),
+			golden:        "SampleLimits_Limit2000.golden",
 		},
 		{
 			enforcedLimit: 1000,
 			limit:         500,
-			expected:      fmt.Sprintf(expectLimit, 500),
+			golden:        "SampleLimits_Limit500.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("enforcedlimit(%d) limit(%d)", tc.enforcedLimit, tc.limit), func(t *testing.T) {
@@ -3812,208 +3260,66 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestTargetLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  target_limit: %d
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version       string
 		enforcedLimit int
 		limit         int
 		expected      string
+		golden        string
 	}{
 		{
 			version:       "v2.15.0",
 			enforcedLimit: -1,
 			limit:         -1,
-			expected:      expectNoLimit,
+			golden:        "TargetLimits-1_Versionv2.15.0.golden",
 		},
 		{
 			version:       "v2.21.0",
 			enforcedLimit: -1,
 			limit:         -1,
-			expected:      expectNoLimit,
+			golden:        "TargetLimits-1_Versionv2.21.0.golden",
 		},
 		{
 			version:       "v2.15.0",
 			enforcedLimit: 1000,
 			limit:         -1,
-			expected:      expectNoLimit,
+			golden:        "TargetLimits-1_Versionv2.15.0.golden",
 		},
 		{
 			version:       "v2.21.0",
 			enforcedLimit: 1000,
 			limit:         -1,
-			expected:      fmt.Sprintf(expectLimit, 1000),
+			golden:        "TargetLimits-1_Versionv2.21.0_Enforce1000.golden",
 		},
 		{
 			version:       "v2.15.0",
 			enforcedLimit: 1000,
 			limit:         2000,
-			expected:      expectNoLimit,
+			golden:        "TargetLimits2000_Versionv2.15.0_Enforce1000.golden",
 		},
 		{
 			version:       "v2.21.0",
 			enforcedLimit: 1000,
 			limit:         2000,
-			expected:      fmt.Sprintf(expectLimit, 1000),
+			golden:        "TargetLimits2000_Versionv2.21.0_Enforce1000.golden",
 		},
 		{
 			version:       "v2.15.0",
 			enforcedLimit: 1000,
 			limit:         500,
-			expected:      expectNoLimit,
+			golden:        "TargetLimits500_Versionv2.15.0_Enforce1000.golden",
 		},
 		{
 			version:       "v2.21.0",
 			enforcedLimit: 1000,
 			limit:         500,
-			expected:      fmt.Sprintf(expectLimit, 500),
+			golden:        "TargetLimits1000_Versionv2.21.0_Enforce1000.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s enforcedlimit(%d) limit(%d)", tc.version, tc.enforcedLimit, tc.limit), func(t *testing.T) {
@@ -4070,7 +3376,7 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
@@ -4079,7 +3385,7 @@ func TestRemoteReadConfig(t *testing.T) {
 	for _, tc := range []struct {
 		version     string
 		remoteRead  monitoringv1.RemoteReadSpec
-		expected    string
+		golden      string
 		expectedErr error
 	}{
 		{
@@ -4092,25 +3398,7 @@ func TestRemoteReadConfig(t *testing.T) {
 					EndpointParams: map[string]string{"param": "value"},
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_read:
-- url: http://example.com
-  remote_timeout: 30s
-  oauth2:
-    client_id: client-id
-    client_secret: client-secret
-    token_url: http://token-url
-    scopes:
-    - scope1
-    endpoint_params:
-      param: value
-`,
+			golden: "RemoteReadConfig_v2.27.1.golden",
 		},
 		{
 			version: "v2.26.0",
@@ -4122,17 +3410,54 @@ remote_read:
 					EndpointParams: map[string]string{"param": "value"},
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_read:
-- url: http://example.com
-  remote_timeout: 30s
-`,
+			golden: "RemoteReadConfig_v2.26.0.golden",
+		},
+		{
+			version: "v2.25.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL:             "http://example.com",
+				FollowRedirects: ptr.To(true),
+			},
+			golden: "RemoteReadConfig_v2.25.0.golden",
+		},
+		{
+			version: "v2.26.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL:             "http://example.com",
+				FollowRedirects: ptr.To(false),
+			},
+			golden: "RemoteReadConfig_v2.26.0_NotFollowRedirects.golden",
+		},
+		{
+			version: "v2.26.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL:                  "http://example.com",
+				FilterExternalLabels: ptr.To(true),
+			},
+			golden: "RemoteReadConfig_v2.26.0_FilterExternalLabels.golden",
+		},
+		{
+			version: "v2.34.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL: "http://example.com",
+			},
+			golden: "RemoteReadConfig_v2.34.0.golden",
+		},
+		{
+			version: "v2.34.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL:                  "http://example.com",
+				FilterExternalLabels: ptr.To(false),
+			},
+			golden: "RemoteReadConfig_v2.34.0_NotFilterExternalLabels.golden",
+		},
+		{
+			version: "v2.34.0",
+			remoteRead: monitoringv1.RemoteReadSpec{
+				URL:                  "http://example.com",
+				FilterExternalLabels: ptr.To(true),
+			},
+			golden: "RemoteReadConfig_v2.34.0_FilterExternalLabels.golden",
 		},
 		{
 			version: "v2.25.0",
@@ -4258,20 +3583,7 @@ remote_read:
 					},
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_read:
-- url: http://example.com
-  remote_timeout: 30s
-  authorization:
-    type: Bearer
-    credentials: secret
-`,
+			golden: "RemoteReadConfig_v2.26.0_AuthorizationSafe.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("version=%s", tc.version), func(t *testing.T) {
@@ -4316,17 +3628,18 @@ remote_read:
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestRemoteWriteConfig(t *testing.T) {
 	sendNativeHistograms := true
+	enableHTTP2 := false
 	for _, tc := range []struct {
 		version     string
 		remoteWrite monitoringv1.RemoteWriteSpec
-		expected    string
+		golden      string
 		expectedErr error
 	}{
 		{
@@ -4338,35 +3651,17 @@ func TestRemoteWriteConfig(t *testing.T) {
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
 					MaxRetries:        3,
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 				},
 				MetadataConfig: &monitoringv1.MetadataConfig{
 					Send:         false,
 					SendInterval: "1m",
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    min_backoff: 1s
-    max_backoff: 10s
-`,
+			golden: "RemoteWriteConfig_v2.22.0_1.golden",
 		},
 		{
 			version: "v2.23.0",
@@ -4377,38 +3672,17 @@ remote_write:
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
 					MaxRetries:        3,
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 				},
 				MetadataConfig: &monitoringv1.MetadataConfig{
 					Send:         false,
 					SendInterval: "1m",
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    min_backoff: 1s
-    max_backoff: 10s
-  metadata_config:
-    send: false
-    send_interval: 1m
-`,
+			golden: "RemoteWriteConfig_v2.23.0_1.golden",
 		},
 		{
 			version: "v2.23.0",
@@ -4419,37 +3693,16 @@ remote_write:
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 				},
 				MetadataConfig: &monitoringv1.MetadataConfig{
 					Send:         false,
 					SendInterval: "1m",
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    min_backoff: 1s
-    max_backoff: 10s
-  metadata_config:
-    send: false
-    send_interval: 1m
-`,
+			golden: "RemoteWriteConfig_v2.23.0_2.golden",
 		},
 		{
 			version: "v2.10.0",
@@ -4460,36 +3713,17 @@ remote_write:
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
 					MaxRetries:        3,
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 				},
 				MetadataConfig: &monitoringv1.MetadataConfig{
 					Send:         false,
 					SendInterval: "1m",
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    max_retries: 3
-    min_backoff: 1s
-    max_backoff: 10s
-`,
+			golden: "RemoteWriteConfig_v2.10.0_1.golden",
 		},
 		{
 			version: "v2.27.1",
@@ -4501,25 +3735,60 @@ remote_write:
 					EndpointParams: map[string]string{"param": "value"},
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  oauth2:
-    client_id: client-id
-    client_secret: client-secret
-    token_url: http://token-url
-    scopes:
-    - scope1
-    endpoint_params:
-      param: value
-`,
+			golden: "RemoteWriteConfig_v2.27.1_1.golden",
+		},
+		{
+			version: "v2.45.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL: "http://example.com",
+				AzureAD: &monitoringv1.AzureAD{
+					Cloud: ptr.To("AzureGovernment"),
+					ManagedIdentity: &monitoringv1.ManagedIdentity{
+						ClientID: "client-id",
+					},
+				},
+			},
+			golden: "RemoteWriteConfig_v2.45.0_1.golden",
+		},
+		{
+			version: "v2.48.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL: "http://example.com",
+				AzureAD: &monitoringv1.AzureAD{
+					Cloud: ptr.To("AzureGovernment"),
+					OAuth: &monitoringv1.AzureOAuth{
+						TenantID: "00000000-a12b-3cd4-e56f-000000000000",
+						ClientID: "00000000-0000-0000-0000-000000000000",
+						ClientSecret: v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "azure-oauth-secret",
+							},
+							Key: "secret-key",
+						},
+					},
+				},
+			},
+			golden: "RemoteWriteConfigAzureADOAuth_v2.48.0_1.golden",
+		},
+		{
+			version: "v2.47.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL: "http://example.com",
+				AzureAD: &monitoringv1.AzureAD{
+					Cloud: ptr.To("AzureGovernment"),
+					OAuth: &monitoringv1.AzureOAuth{
+						TenantID: "00000000-a12b-3cd4-e56f-000000000000",
+						ClientID: "00000000-0000-0000-0000-000000000000",
+						ClientSecret: v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "azure-oauth-secret",
+							},
+							Key: "secret-key",
+						},
+					},
+				},
+			},
+			golden: "RemoteWriteConfigAzureADOAuth_v2.47.0_1.golden",
 		},
 		{
 			version: "v2.26.0",
@@ -4535,20 +3804,7 @@ remote_write:
 					},
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  authorization:
-    type: Bearer
-    credentials: secret
-`,
+			golden: "RemoteWriteConfig_v2.26.0_2.golden",
 		},
 		{
 			version: "v2.26.0",
@@ -4576,44 +3832,17 @@ remote_write:
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
 					MaxRetries:        3,
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 				},
 				MetadataConfig: &monitoringv1.MetadataConfig{
 					Send:         false,
 					SendInterval: "1m",
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  sigv4:
-    region: us-central-0
-    access_key: access-key
-    secret_key: secret-key
-    profile: profilename
-    role_arn: arn:aws:iam::123456789012:instance-profile/prometheus
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    min_backoff: 1s
-    max_backoff: 10s
-  metadata_config:
-    send: false
-    send_interval: 1m
-`,
+			golden: "RemoteWriteConfig_3.golden",
 		},
 		{
 			version: "v2.26.0",
@@ -4622,17 +3851,7 @@ remote_write:
 				RemoteTimeout: "1s",
 				Sigv4:         nil,
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 1s
-`,
+			golden: "RemoteWriteConfig_v2.26.0_3.golden",
 		},
 		{
 			version: "v2.26.0",
@@ -4641,18 +3860,7 @@ remote_write:
 				Sigv4:         &monitoringv1.Sigv4{},
 				RemoteTimeout: "1s",
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 1s
-  sigv4: {}
-`,
+			golden: "RemoteWriteConfig_v2.26.0_4.golden",
 		},
 		{
 			version: "v2.30.0",
@@ -4663,33 +3871,95 @@ remote_write:
 					MinShards:         1,
 					MaxShards:         10,
 					MaxSamplesPerSend: 100,
-					BatchSendDeadline: "20s",
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
 					MaxRetries:        3,
-					MinBackoff:        "1s",
-					MaxBackoff:        "10s",
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
 					RetryOnRateLimit:  true,
 				},
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-remote_write:
-- url: http://example.com
-  remote_timeout: 30s
-  queue_config:
-    capacity: 1000
-    min_shards: 1
-    max_shards: 10
-    max_samples_per_send: 100
-    batch_send_deadline: 20s
-    min_backoff: 1s
-    max_backoff: 10s
-    retry_on_http_429: true
-`,
+			golden: "RemoteWriteConfig_v2.30.0_2.golden",
+		},
+		{
+			version: "v2.43.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL:                  "http://example.com",
+				SendNativeHistograms: &sendNativeHistograms,
+				QueueConfig: &monitoringv1.QueueConfig{
+					Capacity:          1000,
+					MinShards:         1,
+					MaxShards:         10,
+					MaxSamplesPerSend: 100,
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
+					MaxRetries:        3,
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
+					RetryOnRateLimit:  true,
+				},
+			},
+			golden: "RemoteWriteConfig_v2.43.0_2.golden",
+		},
+		{
+			version: "v2.39.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL:                  "http://example.com",
+				SendNativeHistograms: &sendNativeHistograms,
+				EnableHttp2:          &enableHTTP2,
+				QueueConfig: &monitoringv1.QueueConfig{
+					Capacity:          1000,
+					MinShards:         1,
+					MaxShards:         10,
+					MaxSamplesPerSend: 100,
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
+					MaxRetries:        3,
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
+					RetryOnRateLimit:  true,
+				},
+			},
+			golden: "RemoteWriteConfig_v2.39.0_1.golden",
+		},
+		{
+			version: "v2.49.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL:                  "http://example.com",
+				SendNativeHistograms: &sendNativeHistograms,
+				EnableHttp2:          &enableHTTP2,
+				QueueConfig: &monitoringv1.QueueConfig{
+					Capacity:          1000,
+					MinShards:         1,
+					MaxShards:         10,
+					MaxSamplesPerSend: 100,
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
+					MaxRetries:        3,
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
+					RetryOnRateLimit:  true,
+					SampleAgeLimit:    ptr.To(monitoringv1.Duration("1s")),
+				},
+			},
+			golden: "RemoteWriteConfig_v2.49.0.golden",
+		},
+		{
+			version: "v2.50.0",
+			remoteWrite: monitoringv1.RemoteWriteSpec{
+				URL:                  "http://example.com",
+				SendNativeHistograms: &sendNativeHistograms,
+				EnableHttp2:          &enableHTTP2,
+				QueueConfig: &monitoringv1.QueueConfig{
+					Capacity:          1000,
+					MinShards:         1,
+					MaxShards:         10,
+					MaxSamplesPerSend: 100,
+					BatchSendDeadline: ptr.To(monitoringv1.Duration("20s")),
+					MaxRetries:        3,
+					MinBackoff:        ptr.To(monitoringv1.Duration("1s")),
+					MaxBackoff:        ptr.To(monitoringv1.Duration("10s")),
+					RetryOnRateLimit:  true,
+					SampleAgeLimit:    ptr.To(monitoringv1.Duration("1s")),
+				},
+			},
+			golden: "RemoteWriteConfig_v2.50.0.golden",
 		},
 		{
 			version: "v2.43.0",
@@ -4795,6 +4065,13 @@ remote_write:
 					},
 				}
 			}
+			if tc.remoteWrite.AzureAD != nil && tc.remoteWrite.AzureAD.OAuth != nil {
+				store.AzureOAuthAssets = map[string]assets.AzureOAuthCredentials{
+					"remoteWrite/0": {
+						ClientSecret: "secret-key",
+					},
+				}
+			}
 
 			cg := mustNewConfigGenerator(t, p)
 			cfg, err := cg.GenerateServerConfiguration(
@@ -4821,208 +4098,69 @@ remote_write:
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestLabelLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  label_limit: %d
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version            string
 		enforcedLabelLimit int
 		labelLimit         int
-		expected           string
+		golden             string
 	}{
 		{
 			version:            "v2.26.0",
 			enforcedLabelLimit: -1,
 			labelLimit:         -1,
-			expected:           expectNoLimit,
+			golden:             "LabelLimits_NoLimit_v2.26.0.golden",
 		},
 		{
 			version:            "v2.27.0",
 			enforcedLabelLimit: -1,
 			labelLimit:         -1,
-			expected:           expectNoLimit,
+
+			golden: "LabelLimits_NoLimit_v2.27.0.golden",
 		},
 		{
 			version:            "v2.26.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         -1,
-			expected:           expectNoLimit,
+
+			golden: "LabelLimits_NoLimit_v2.26.0_enforceLimit1000.golden",
 		},
 		{
 			version:            "v2.27.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         -1,
-			expected:           fmt.Sprintf(expectLimit, 1000),
+			golden:             "LabelLimits_NoLimit_v2.27.0_enforceLimit1000.golden",
 		},
 		{
 			version:            "v2.26.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         2000,
-			expected:           expectNoLimit,
+
+			golden: "LabelLimits_Limit2000_v2.26.0_enforceLimit1000.golden",
 		},
 		{
 			version:            "v2.27.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         2000,
-			expected:           fmt.Sprintf(expectLimit, 1000),
+			golden:             "LabelLimits_Limit2000_v2.27.0_enforceLimit1000.golden",
 		},
 		{
 			version:            "v2.26.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         500,
-			expected:           expectNoLimit,
+
+			golden: "LabelLimits_Limit500_v2.26.0_enforceLimit1000.golden",
 		},
 		{
 			version:            "v2.27.0",
 			enforcedLabelLimit: 1000,
 			labelLimit:         500,
-			expected:           fmt.Sprintf(expectLimit, 500),
+			golden:             "LabelLimits_Limit500_v2.27.0_enforceLimit1000.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s enforcedLabelLimit(%d) labelLimit(%d)", tc.version, tc.enforcedLabelLimit, tc.labelLimit), func(t *testing.T) {
@@ -5078,170 +4216,65 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestLabelNameLengthLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  label_name_length_limit: %d
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version                      string
 		enforcedLabelNameLengthLimit int
 		labelNameLengthLimit         int
-		expected                     string
+		golden                       string
 	}{
 		{
 			version:                      "v2.26.0",
 			enforcedLabelNameLengthLimit: -1,
 			labelNameLengthLimit:         -1,
-			expected:                     expectNoLimit,
+			golden:                       "LabelNameLengthLimits_Limit-1_Enforce-1_v2.26.0.golden",
 		},
 		{
 			version:                      "v2.27.0",
 			enforcedLabelNameLengthLimit: -1,
 			labelNameLengthLimit:         -1,
-			expected:                     expectNoLimit,
+			golden:                       "LabelNameLengthLimits_Limit-1_Enforce-1_v2.27.0.golden",
 		},
 		{
 			version:                      "v2.26.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         -1,
-			expected:                     expectNoLimit,
+			golden:                       "LabelNameLengthLimits_Limit-1_Enforc1000_v2.26.0.golden",
 		},
 		{
 			version:                      "v2.27.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         -1,
-			expected:                     fmt.Sprintf(expectLimit, 1000),
+			golden:                       "LabelNameLengthLimits_Limit-1_Enforce1000_v2.27.0.golden",
 		},
 		{
 			version:                      "v2.26.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         2000,
-			expected:                     expectNoLimit,
+			golden:                       "LabelNameLengthLimits_Limit2000_Enforce1000_v2.26.0.golden",
 		},
 		{
 			version:                      "v2.27.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         2000,
-			expected:                     fmt.Sprintf(expectLimit, 1000),
+			golden:                       "LabelNameLengthLimits_Limit2000_Enforce1000_v2.27.0.golden",
 		},
 		{
 			version:                      "v2.26.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         500,
-			expected:                     expectNoLimit,
+			golden:                       "LabelNameLengthLimits_Limit500_Enforce1000_v2.26.0.golden",
 		},
 		{
 			version:                      "v2.27.0",
 			enforcedLabelNameLengthLimit: 1000,
 			labelNameLengthLimit:         500,
-			expected:                     fmt.Sprintf(expectLimit, 500),
+			golden:                       "LabelNameLengthLimits_Limit500_Enforce1000_v2.27.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s enforcedLabelNameLengthLimit(%d) labelNameLengthLimit(%d)", tc.version, tc.enforcedLabelNameLengthLimit, tc.labelNameLengthLimit), func(t *testing.T) {
@@ -5297,158 +4330,65 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestLabelValueLengthLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/testprobe1
-  honor_timestamps: true
-  metrics_path: /probe
-  scheme: http
-  proxy_url: socks://myproxy:9095
-  params:
-    module:
-    - http_2xx
-  static_configs:
-  - targets:
-    - prometheus.io
-    - promcon.io
-    labels:
-      namespace: default
-      static: label
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __address__
-    target_label: __param_target
-  - source_labels:
-    - __param_target
-    target_label: instance
-  - target_label: __address__
-    replacement: blackbox.exporter.io
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/testprobe1
-  honor_timestamps: true
-  metrics_path: /probe
-  scheme: http
-  proxy_url: socks://myproxy:9095
-  params:
-    module:
-    - http_2xx
-  label_value_length_limit: %d
-  static_configs:
-  - targets:
-    - prometheus.io
-    - promcon.io
-    labels:
-      namespace: default
-      static: label
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __address__
-    target_label: __param_target
-  - source_labels:
-    - __param_target
-    target_label: instance
-  - target_label: __address__
-    replacement: blackbox.exporter.io
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version                       string
 		enforcedLabelValueLengthLimit int
 		labelValueLengthLimit         int
-		expected                      string
+		golden                        string
 	}{
 		{
 			version:                       "v2.26.0",
 			enforcedLabelValueLengthLimit: -1,
 			labelValueLengthLimit:         -1,
-			expected:                      expectNoLimit,
+			golden:                        "LabelValueLengthLimits_Enforce-1_LabelValue-1_v2.26.0.golden",
 		},
 		{
 			version:                       "v2.27.0",
 			enforcedLabelValueLengthLimit: -1,
 			labelValueLengthLimit:         -1,
-			expected:                      expectNoLimit,
+			golden:                        "LabelValueLengthLimits_Enforce-1_LabelValue-1_v2.27.0.golden",
 		},
 		{
 			version:                       "v2.26.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         -1,
-			expected:                      expectNoLimit,
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue-1_v2.26.0.golden",
 		},
 		{
 			version:                       "v2.27.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         -1,
-			expected:                      fmt.Sprintf(expectLimit, 1000),
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue-1_v2.27.0.golden",
 		},
 		{
 			version:                       "v2.26.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         2000,
-			expected:                      expectNoLimit,
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue2000_v2.26.0.golden",
 		},
 		{
 			version:                       "v2.27.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         2000,
-			expected:                      fmt.Sprintf(expectLimit, 1000),
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue2000_v2.27.0.golden",
 		},
 		{
 			version:                       "v2.26.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         500,
-			expected:                      expectNoLimit,
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue500_v2.26.0.golden",
 		},
 		{
 			version:                       "v2.27.0",
 			enforcedLabelValueLengthLimit: 1000,
 			labelValueLengthLimit:         500,
-			expected:                      fmt.Sprintf(expectLimit, 500),
+			golden:                        "LabelValueLengthLimits_Enforce1000_LabelValue500_v2.27.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s enforcedLabelValueLengthLimit(%d) labelValueLengthLimit(%d)", tc.version, tc.enforcedLabelValueLengthLimit, tc.labelValueLengthLimit), func(t *testing.T) {
@@ -5516,7 +4456,7 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
@@ -5602,169 +4542,34 @@ func TestKeepDroppedTargets(t *testing.T) {
 }
 
 func TestBodySizeLimits(t *testing.T) {
-	expectNoLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectLimit := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  body_size_limit: %s
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
-		version               string
-		enforcedBodySizeLimit monitoringv1.ByteSize
-		expected              string
-		expectedErr           error
+		version                     string
+		enforcedBodySizeLimit       monitoringv1.ByteSize
+		serviceMonitorBodySizeLimit *monitoringv1.ByteSize
+		expectedErr                 error
+		golden                      string
 	}{
 		{
-			version:               "v2.27.0",
-			enforcedBodySizeLimit: "1000MB",
-			expected:              expectNoLimit,
+			version:                     "v2.27.0",
+			enforcedBodySizeLimit:       "1000MB",
+			serviceMonitorBodySizeLimit: ptr.To[monitoringv1.ByteSize]("2GB"),
+			golden:                      "BodySizeLimits_enforce_v2.27.0.golden",
 		},
 		{
 			version:               "v2.28.0",
 			enforcedBodySizeLimit: "1000MB",
-			expected:              fmt.Sprintf(expectLimit, "1000MB"),
+			golden:                "BodySizeLimits_enforce1000MB_v2.28.0.golden",
+		},
+		{
+			version:                     "v2.28.0",
+			enforcedBodySizeLimit:       "4000MB",
+			serviceMonitorBodySizeLimit: ptr.To[monitoringv1.ByteSize]("2GB"),
+			golden:                      "BodySizeLimits_enforce2GB_v2.28.0.golden",
 		},
 		{
 			version:               "v2.28.0",
 			enforcedBodySizeLimit: "",
-			expected:              expectNoLimit,
+			golden:                "BodySizeLimits_enforce0MB_v2.28.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s enforcedBodySizeLimit(%s)", tc.version, tc.enforcedBodySizeLimit), func(t *testing.T) {
@@ -5790,6 +4595,7 @@ scrape_configs:
 							Interval: "30s",
 						},
 					},
+					BodySizeLimit: tc.serviceMonitorBodySizeLimit,
 				},
 			}
 
@@ -5822,7 +4628,7 @@ scrape_configs:
 				return
 			}
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
@@ -5876,325 +4682,35 @@ func TestMatchExpressionsServiceMonitor(t *testing.T) {
 	)
 
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/test/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_service_label_alpha
-    - __meta_kubernetes_service_labelpresent_alpha
-    regex: (beta|gamma);true
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "MatchExpressionsServiceMonitor.golden")
 }
 
 func TestServiceMonitorEndpointFollowRedirects(t *testing.T) {
-	expectedWithRedirectsUnsupported := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectedWithRedirectsDisabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  follow_redirects: false
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-	expectedWithRedirectsEnabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  follow_redirects: true
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version         string
 		expected        string
+		golden          string
 		followRedirects bool
 	}{
 		{
 			version:         "v2.25.0",
 			followRedirects: false,
-			expected:        expectedWithRedirectsUnsupported,
+			golden:          "ServiceMonitorEndpointFollowRedirects_FollowRedirectFalse_v2.25.0.golden",
 		},
 		{
 			version:         "v2.25.0",
 			followRedirects: true,
-			expected:        expectedWithRedirectsUnsupported,
+			golden:          "ServiceMonitorEndpointFollowRedirects_FollowRedirectTrue_v2.25.0.golden",
 		},
 		{
 			version:         "v2.28.0",
 			followRedirects: true,
-			expected:        expectedWithRedirectsEnabled,
+			golden:          "ServiceMonitorEndpointFollowRedirects_FollowRedirectTrue_v2.28.0.golden",
 		},
 		{
 			version:         "v2.28.0",
 			followRedirects: false,
-			expected:        expectedWithRedirectsDisabled,
+			golden:          "ServiceMonitorEndpointFollowRedirects_FollowRedirectFalse_v2.28.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s TestServiceMonitorEndpointFollowRedirects(%t)", tc.version, tc.followRedirects), func(t *testing.T) {
@@ -6214,7 +4730,7 @@ scrape_configs:
 						{
 							Port:            "web",
 							Interval:        "30s",
-							FollowRedirects: swag.Bool(tc.followRedirects),
+							FollowRedirects: ptr.To(tc.followRedirects),
 						},
 					},
 				},
@@ -6243,193 +4759,36 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestPodMonitorEndpointFollowRedirects(t *testing.T) {
-	expectedWithRedirectsUnsupported := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectedWithRedirectsDisabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  follow_redirects: false
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-	expectedWithRedirectsEnabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  follow_redirects: true
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version         string
-		expected        string
+		golden          string
 		followRedirects bool
 	}{
 		{
 			version:         "v2.25.0",
 			followRedirects: false,
-			expected:        expectedWithRedirectsUnsupported,
+			golden:          "PodMonitorEndpointFollowRedirects_FollowRedirectsFalse_v2.25.0.golden",
 		},
 		{
 			version:         "v2.25.0",
 			followRedirects: true,
-			expected:        expectedWithRedirectsUnsupported,
+			golden:          "PodMonitorEndpointFollowRedirects_FollowRedirectsTrue_v2.25.0.golden",
 		},
 		{
 			version:         "v2.28.0",
 			followRedirects: true,
-			expected:        expectedWithRedirectsEnabled,
+			golden:          "PodMonitorEndpointFollowRedirects_FollowRedirectsTrue_v2.28.0.golden",
 		},
 		{
 			version:         "v2.28.0",
 			followRedirects: false,
-			expected:        expectedWithRedirectsDisabled,
+			golden:          "PodMonitorEndpointFollowRedirects_FollowRedirectsFalse_v2.28.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s TestServiceMonitorEndpointFollowRedirects(%t)", tc.version, tc.followRedirects), func(t *testing.T) {
@@ -6449,7 +4808,7 @@ scrape_configs:
 						{
 							Port:            "web",
 							Interval:        "30s",
-							FollowRedirects: swag.Bool(tc.followRedirects),
+							FollowRedirects: ptr.To(tc.followRedirects),
 						},
 					},
 				},
@@ -6479,250 +4838,36 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestServiceMonitorEndpointEnableHttp2(t *testing.T) {
-	expectedWithHTTP2Unsupported := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectedWithHTTP2Disabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  enable_http2: false
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-	expectedWithHTTP2Enabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/testservicemonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  enable_http2: true
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version     string
-		expected    string
+		golden      string
 		enableHTTP2 bool
 	}{
 		{
 			version:     "v2.34.0",
 			enableHTTP2: false,
-			expected:    expectedWithHTTP2Unsupported,
+			golden:      "ServiceMonitorEndpointEnableHttp2_EnableHTTP2False_v2.34.0.golden",
 		},
 		{
 			version:     "v2.34.0",
 			enableHTTP2: true,
-			expected:    expectedWithHTTP2Unsupported,
+			golden:      "ServiceMonitorEndpointEnableHttp2_EnableHTTP2True_v2.34.0.golden",
 		},
 		{
 			version:     "v2.35.0",
 			enableHTTP2: true,
-			expected:    expectedWithHTTP2Enabled,
+			golden:      "ServiceMonitorEndpointEnableHttp2_EnableHTTP2True_v2.35.0.golden",
 		},
 		{
 			version:     "v2.35.0",
 			enableHTTP2: false,
-			expected:    expectedWithHTTP2Disabled,
+			golden:      "ServiceMonitorEndpointEnableHttp2_EnableHTTP2False_v2.35.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s TestServiceMonitorEndpointEnableHttp2(%t)", tc.version, tc.enableHTTP2), func(t *testing.T) {
@@ -6742,7 +4887,7 @@ scrape_configs:
 						{
 							Port:        "web",
 							Interval:    "30s",
-							EnableHttp2: swag.Bool(tc.enableHTTP2),
+							EnableHttp2: ptr.To(tc.enableHTTP2),
 						},
 					},
 				},
@@ -6771,7 +4916,7 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
@@ -6802,7 +4947,7 @@ func TestPodMonitorPhaseFilter(t *testing.T) {
 				Spec: monitoringv1.PodMonitorSpec{
 					PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
 						{
-							FilterRunning: swag.Bool(false),
+							FilterRunning: ptr.To(false),
 							Port:          "test",
 						},
 					},
@@ -6818,239 +4963,34 @@ func TestPodMonitorPhaseFilter(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/default/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - default
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: test
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: default/testpodmonitor1
-  - target_label: endpoint
-    replacement: test
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "PodMonitorPhaseFilter.golden")
 }
 
 func TestPodMonitorEndpointEnableHttp2(t *testing.T) {
-	expectedWithHTTP2Unsupported := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
-	expectedWithHTTP2Disabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  enable_http2: false
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-	expectedWithHTTP2Enabled := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: podMonitor/pod-monitor-ns/testpodmonitor1/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: pod
-    namespaces:
-      names:
-      - pod-monitor-ns
-  scrape_interval: 30s
-  enable_http2: true
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_pod_container_port_name
-    regex: web
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - target_label: job
-    replacement: pod-monitor-ns/testpodmonitor1
-  - target_label: endpoint
-    replacement: web
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`
-
 	for _, tc := range []struct {
 		version     string
-		expected    string
+		golden      string
 		enableHTTP2 bool
 	}{
 		{
 			version:     "v2.34.0",
 			enableHTTP2: false,
-			expected:    expectedWithHTTP2Unsupported,
+			golden:      "PodMonitorEndpointEnableHttp2_EnableHTTP2False_v2.34.0.golden",
 		},
 		{
 			version:     "v2.34.0",
 			enableHTTP2: true,
-			expected:    expectedWithHTTP2Unsupported,
+			golden:      "PodMonitorEndpointEnableHttp2_EnableHTTP2True_v2.34.0.golden",
 		},
 		{
 			version:     "v2.35.0",
 			enableHTTP2: true,
-			expected:    expectedWithHTTP2Enabled,
+			golden:      "PodMonitorEndpointEnableHttp2_EnableHTTP2True_v2.35.0.golden",
 		},
 		{
 			version:     "v2.35.0",
 			enableHTTP2: false,
-			expected:    expectedWithHTTP2Disabled,
+			golden:      "PodMonitorEndpointEnableHttp2_EnableHTTP2False_v2.35.0.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("%s TestServiceMonitorEndpointEnableHttp2(%t)", tc.version, tc.enableHTTP2), func(t *testing.T) {
@@ -7070,7 +5010,7 @@ scrape_configs:
 						{
 							Port:        "web",
 							Interval:    "30s",
-							EnableHttp2: swag.Bool(tc.enableHTTP2),
+							EnableHttp2: ptr.To(tc.enableHTTP2),
 						},
 					},
 				},
@@ -7099,34 +5039,24 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
 
 func TestStorageSettingMaxExemplars(t *testing.T) {
 	for _, tc := range []struct {
-		Scenario       string
-		Version        string
-		Exemplars      *monitoringv1.Exemplars
-		ExpectedConfig string
+		Scenario  string
+		Version   string
+		Exemplars *monitoringv1.Exemplars
+		Golden    string
 	}{
 		{
 			Scenario: "Exemplars maxSize is set to 5000000",
 			Exemplars: &monitoringv1.Exemplars{
 				MaxSize: ptr.To(int64(5000000)),
 			},
-			ExpectedConfig: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-storage:
-  exemplars:
-    max_exemplars: 5000000
-`,
+			Golden: "StorageSettingMaxExemplars_MaxSize5000000.golden",
 		},
 		{
 			Scenario: "max_exemplars is not set if version is less than v2.29.0",
@@ -7134,25 +5064,11 @@ storage:
 			Exemplars: &monitoringv1.Exemplars{
 				MaxSize: ptr.To(int64(5000000)),
 			},
-			ExpectedConfig: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-`,
+			Golden: "StorageSettingMaxExemplars_MaxSizeNotSet_v2.29.0.golden",
 		},
 		{
 			Scenario: "Exemplars maxSize is not set",
-			ExpectedConfig: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-`,
+			Golden:   "StorageSettingMaxExemplars_MaxSizeNotSetAtAll.golden",
 		},
 	} {
 		t.Run(fmt.Sprintf("case %s", tc.Scenario), func(t *testing.T) {
@@ -7185,29 +5101,22 @@ scrape_configs: []
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.ExpectedConfig, string(cfg))
+			golden.Assert(t, string(cfg), tc.Golden)
 		})
 	}
 }
 
 func TestTSDBConfig(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		p        *monitoringv1.Prometheus
-		version  string
-		tsdb     *monitoringv1.TSDBSpec
-		expected string
+		name    string
+		p       *monitoringv1.Prometheus
+		version string
+		tsdb    *monitoringv1.TSDBSpec
+		golden  string
 	}{
 		{
-			name: "no TSDB config",
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-`,
+			name:   "no TSDB config",
+			golden: "no_TSDB_config.golden",
 		},
 		{
 			name:    "TSDB config < v2.39.0",
@@ -7215,31 +5124,15 @@ scrape_configs: []
 			tsdb: &monitoringv1.TSDBSpec{
 				OutOfOrderTimeWindow: monitoringv1.Duration("10m"),
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-`,
+			golden: "TSDB_config_less_than_v2.39.0.golden",
 		},
 		{
+
 			name: "TSDB config >= v2.39.0",
 			tsdb: &monitoringv1.TSDBSpec{
 				OutOfOrderTimeWindow: monitoringv1.Duration("10m"),
 			},
-			expected: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-storage:
-  tsdb:
-    out_of_order_time_window: 10m
-`,
+			golden: "TSDB_config_greater_than_or_equal_to_v2.39.0.golden",
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -7272,7 +5165,7 @@ storage:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expected, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
 }
@@ -7347,101 +5240,7 @@ func TestGenerateRelabelConfig(t *testing.T) {
 		nil,
 	)
 	require.NoError(t, err)
-
-	expected := `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: serviceMonitor/default/test/0
-  honor_labels: false
-  kubernetes_sd_configs:
-  - role: endpoints
-    namespaces:
-      names:
-      - default
-  scrape_interval: 30s
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_service_label_foo
-    - __meta_kubernetes_service_labelpresent_foo
-    regex: (bar);true
-  - action: keep
-    source_labels:
-    - __meta_kubernetes_endpoint_port_name
-    regex: https-metrics
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Node;(.*)
-    replacement: ${1}
-    target_label: node
-  - source_labels:
-    - __meta_kubernetes_endpoint_address_target_kind
-    - __meta_kubernetes_endpoint_address_target_name
-    separator: ;
-    regex: Pod;(.*)
-    replacement: ${1}
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_namespace
-    target_label: namespace
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: service
-  - source_labels:
-    - __meta_kubernetes_pod_name
-    target_label: pod
-  - source_labels:
-    - __meta_kubernetes_pod_container_name
-    target_label: container
-  - action: drop
-    source_labels:
-    - __meta_kubernetes_pod_phase
-    regex: (Failed|Succeeded)
-  - source_labels:
-    - __meta_kubernetes_service_name
-    target_label: job
-    replacement: ${1}
-  - target_label: endpoint
-    replacement: https-metrics
-  - source_labels:
-    - instance
-    target_label: instance
-    action: uppercase
-  - source_labels:
-    - __address__
-    target_label: __address__
-    regex: (.+)(?::d+)
-    replacement: $1:9537
-    action: replace
-  - target_label: job
-    replacement: crio
-    action: replace
-  - source_labels:
-    - __address__
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs:
-  - source_labels:
-    - __name__
-    regex: container_fs*
-    action: drop
-`
-
-	require.Equal(t, expected, string(cfg))
+	golden.Assert(t, string(cfg), "GenerateRelabelConfig.golden")
 }
 
 // When adding new test cases the developer should specify a name, a Probe Spec
@@ -7450,42 +5249,19 @@ scrape_configs:
 // case.
 func TestProbeSpecConfig(t *testing.T) {
 	for _, tc := range []struct {
-		name        string
-		patchProm   func(*monitoringv1.Prometheus)
-		pbSpec      monitoringv1.ProbeSpec
-		expectedCfg string
+		name      string
+		patchProm func(*monitoringv1.Prometheus)
+		pbSpec    monitoringv1.ProbeSpec
+		golden    string
 	}{
 		{
 			name:   "empty_probe",
+			golden: "ProbeSpecConfig_empty_probe.golden",
 			pbSpec: monitoringv1.ProbeSpec{},
-			expectedCfg: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/probe1
-  honor_timestamps: true
-  metrics_path: ""
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`,
 		},
 		{
-			name: "prober_spec",
+			name:   "prober_spec",
+			golden: "ProbeSpecConfig_prober_spec.golden",
 			pbSpec: monitoringv1.ProbeSpec{
 				ProberSpec: monitoringv1.ProberSpec{
 					Scheme:   "http",
@@ -7494,36 +5270,10 @@ scrape_configs:
 					ProxyURL: "socks://myproxy:9095",
 				},
 			},
-			expectedCfg: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/probe1
-  honor_timestamps: true
-  metrics_path: /probe
-  scheme: http
-  proxy_url: socks://myproxy:9095
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`,
 		},
 		{
-			name: "targets_static_config",
+			name:   "targets_static_config",
+			golden: "ProbeSpecConfig_targets_static_config.golden",
 			pbSpec: monitoringv1.ProbeSpec{
 				Targets: monitoringv1.ProbeTargets{
 					StaticConfig: &monitoringv1.ProbeTargetStaticConfig{
@@ -7543,83 +5293,13 @@ scrape_configs:
 						},
 					},
 				}},
-			expectedCfg: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/probe1
-  honor_timestamps: true
-  metrics_path: ""
-  static_configs:
-  - targets:
-    - prometheus.io
-    - promcon.io
-    labels:
-      namespace: default
-      static: label
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __address__
-    target_label: __param_target
-  - source_labels:
-    - __param_target
-    target_label: instance
-  - target_label: __address__
-    replacement: ""
-  - target_label: foo
-    replacement: bar
-    action: replace
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`,
 		},
 		{
-			name: "module_config",
+			name:   "module_config",
+			golden: "ProbeSpecConfig_module_config.golden",
 			pbSpec: monitoringv1.ProbeSpec{
 				Module: "http_2xx",
 			},
-			expectedCfg: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs:
-- job_name: probe/default/probe1
-  honor_timestamps: true
-  metrics_path: ""
-  params:
-    module:
-    - http_2xx
-  relabel_configs:
-  - source_labels:
-    - job
-    target_label: __tmp_prometheus_job_name
-  - source_labels:
-    - __param_target
-    target_label: __tmp_hash
-    modulus: 1
-    action: hashmod
-  - source_labels:
-    - __tmp_hash
-    regex: $(SHARD)
-    action: keep
-  metric_relabel_configs: []
-`,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -7659,7 +5339,7 @@ scrape_configs:
 				nil,
 			)
 			require.NoError(t, err)
-			require.Equal(t, tc.expectedCfg, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 
 	}
@@ -7673,6 +5353,7 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 	refreshInterval := monitoringv1.Duration("5m")
 	for _, tc := range []struct {
 		name      string
+		version   string
 		patchProm func(*monitoringv1.Prometheus)
 		scSpec    monitoringv1alpha1.ScrapeConfigSpec
 		golden    string
@@ -7681,6 +5362,53 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 			name:   "empty_scrape_config",
 			scSpec: monitoringv1alpha1.ScrapeConfigSpec{},
 			golden: "ScrapeConfigSpecConfig_Empty.golden",
+		},
+		{
+			name: "shard_config",
+			patchProm: func(p *monitoringv1.Prometheus) {
+				p.Spec.Shards = ptr.To(int32(2))
+			},
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				StaticConfigs: []monitoringv1alpha1.StaticConfig{
+					{
+						Targets: []monitoringv1alpha1.Target{"http://localhost:9100"},
+						Labels: map[monitoringv1.LabelName]string{
+							"label1": "value1",
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_Sharded.golden",
+		},
+		{
+			name: "already_sharded_config",
+			patchProm: func(p *monitoringv1.Prometheus) {
+				p.Spec.Shards = ptr.To(int32(2))
+			},
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				StaticConfigs: []monitoringv1alpha1.StaticConfig{
+					{
+						Targets: []monitoringv1alpha1.Target{"http://localhost:9100"},
+						Labels: map[monitoringv1.LabelName]string{
+							"label1": "value1_sharded",
+						},
+					},
+				},
+				RelabelConfigs: []*monitoringv1.RelabelConfig{
+					{
+						SourceLabels: []monitoringv1.LabelName{"__address__"},
+						TargetLabel:  "__tmp_hash",
+						Modulus:      999,
+						Action:       "hashmod",
+					},
+					{
+						SourceLabels: []monitoringv1.LabelName{"__tmp_hash"},
+						Regex:        "$(SHARD)",
+						Action:       "keep",
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_Already_Sharded.golden",
 		},
 		{
 			name: "static_config",
@@ -7715,21 +5443,23 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 					{
 						URL:             "http://localhost:9100/sd.json",
 						RefreshInterval: &refreshInterval,
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(false),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "foo",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
 					},
 				},
 			},
 			golden: "ScrapeConfigSpecConfig_HTTPSD.golden",
-		},
-		{
-			name: "kubernetes_sd_config",
-			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
-				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
-					{
-						Role: "node",
-					},
-				},
-			},
-			golden: "ScrapeConfigSpecConfig_K8SSD.golden",
 		},
 		{
 			name: "metrics_path",
@@ -7766,6 +5496,13 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 				HonorTimestamps: ptr.To(true),
 			},
 			golden: "ScrapeConfigSpecConfig_HonorTimeStamp.golden",
+		},
+		{
+			name: "track_timestamps_staleness",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				TrackTimestampsStaleness: ptr.To(true),
+			},
+			golden: "ScrapeConfigSpecConfig_TrackTimestampsStaleness.golden",
 		},
 		{
 			name: "honor_labels",
@@ -7910,16 +5647,28 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 		{
 			name: "scrape_interval",
 			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
-				ScrapeInterval: (*monitoringv1.Duration)(ptr.To("15s")),
+				ScrapeInterval: ptr.To(monitoringv1.Duration("15s")),
 			},
 			golden: "ScrapeConfigSpecConfig_ScrapeInterval.golden",
 		},
 		{
 			name: "scrape_timeout",
 			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
-				ScrapeTimeout: (*monitoringv1.Duration)(ptr.To("10s")),
+				ScrapeTimeout: ptr.To(monitoringv1.Duration("10s")),
 			},
 			golden: "ScrapeConfigSpecConfig_ScrapeTimeout.golden",
+		},
+		{
+			name: "scrape_protocols",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				ScrapeProtocols: []monitoringv1.ScrapeProtocol{
+					monitoringv1.ScrapeProtocol("PrometheusProto"),
+					monitoringv1.ScrapeProtocol("OpenMetricsText1.0.0"),
+					monitoringv1.ScrapeProtocol("OpenMetricsText0.0.1"),
+					monitoringv1.ScrapeProtocol("PrometheusText0.0.4"),
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_ScrapeProtocols.golden",
 		},
 		{
 			name: "non_empty_metric_relabel_config",
@@ -7932,6 +5681,47 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 				},
 			},
 			golden: "ScrapeConfigSpecConfig_NonEmptyMetricRelabelConfig.golden",
+		},
+		{
+			name: "proxy_settings",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				ProxyConfig: monitoringv1.ProxyConfig{
+					ProxyURL:             ptr.To("http://no-proxy.com"),
+					NoProxy:              ptr.To("0.0.0.0"),
+					ProxyFromEnvironment: ptr.To(false),
+					ProxyConnectHeader: map[string]v1.SecretKeySelector{
+						"header": {
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "foo",
+							},
+							Key: "proxy-header",
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_ProxySettings.golden",
+		},
+		{
+			name: "proxy_settings_incompatible_prometheus_version",
+			patchProm: func(p *monitoringv1.Prometheus) {
+				p.Spec.CommonPrometheusFields.Version = "v2.42.0"
+			},
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				ProxyConfig: monitoringv1.ProxyConfig{
+					ProxyURL:             ptr.To("http://no-proxy.com"),
+					NoProxy:              ptr.To("0.0.0.0"),
+					ProxyFromEnvironment: ptr.To(false),
+					ProxyConnectHeader: map[string]v1.SecretKeySelector{
+						"header": {
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "foo",
+							},
+							Key: "proxy-header",
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_ProxySettingsIncompatiblePrometheusVersion.golden",
 		},
 		{
 			name: "dns_sd_config-srv-record",
@@ -7957,6 +5747,47 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 			},
 			golden: "ScrapeConfigSpecConfig_DNSSD_ARecord.golden",
 		},
+		{
+			name: "dns_sd_config-ns-record",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DNSSDConfigs: []monitoringv1alpha1.DNSSDConfig{
+					{
+						Names: []string{"node.demo.do.prometheus.io"},
+						Type:  ptr.To("NS"),
+						Port:  ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DNSSD_NSRecord.golden",
+		},
+		{
+			name:    "dns_sd_config-ns-record-old-version",
+			version: "v2.48.0",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DNSSDConfigs: []monitoringv1alpha1.DNSSDConfig{
+					{
+						Names: []string{"node.demo.do.prometheus.io"},
+						Type:  ptr.To("NS"),
+						Port:  ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DNSSD_NSRecord_OldVersion.golden",
+		},
+		{
+			name: "enable_compression_is_set_to_true",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EnableCompression: ptr.To(true),
+			},
+			golden: "ScrapeConfigSpecConfig_EnableCompression_True.golden",
+		},
+		{
+			name: "enable_compression_is_set_to_false",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EnableCompression: ptr.To(false),
+			},
+			golden: "ScrapeConfigSpecConfig_EnableCompression_False.golden",
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
@@ -7970,10 +5801,321 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 			}
 
 			p := defaultPrometheus()
+			if tc.version != "" {
+				p.Spec.CommonPrometheusFields.Version = tc.version
+			}
 			if tc.patchProm != nil {
 				tc.patchProm(p)
 			}
 
+			cg := mustNewConfigGenerator(t, p)
+
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "foo",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.BasicAuthAssets = map[string]assets.BasicAuthCredentials{
+				"scrapeconfig/default/testscrapeconfig1": {
+					Username: "scrape-bob",
+					Password: "scrape-alice",
+				},
+				"scrapeconfig/default/testscrapeconfig1/httpsdconfig/0": {
+					Username: "http-sd-bob",
+					Password: "http-sd-alice",
+				},
+			}
+			store.TokenAssets = map[string]assets.Token{
+				"scrapeconfig/auth/default/testscrapeconfig1":                assets.Token("scrape-secret"),
+				"scrapeconfig/auth/default/testscrapeconfig1/httpsdconfig/0": assets.Token("http-sd-secret"),
+			}
+
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithKubernetesSD(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "kubernetes_sd_config",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects: ptr.To(true),
+						EnableHTTP2:     ptr.To(true),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD.golden",
+		},
+		{
+			name: "kubernetes_sd_config_with_namespace_discovery_and_own_namespace",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Pod"),
+						Namespaces: &monitoringv1alpha1.NamespaceDiscovery{
+							IncludeOwnNamespace: ptr.To(true),
+							Names:               []string{"ns1", "ns2"},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_NamespaceDiscovery_and_OwnNamespace.golden",
+		},
+		{
+			name: "kubernetes_sd_config_with_namespace_discovery",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Pod"),
+						Namespaces: &monitoringv1alpha1.NamespaceDiscovery{
+							Names: []string{"ns1", "ns2"},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_NamespaceDiscovery.golden",
+		},
+		{
+			name: "kubernetes_sd_config_with_supported_role_attach_metadata",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Pod"),
+						AttachMetadata: &monitoringv1alpha1.AttachMetadata{
+							Node: ptr.To(true),
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_AttachMetadata.golden",
+		},
+		{
+			name: "kubernetes_sd_config_with_unsupported_role_attach_metadata",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Service"),
+						AttachMetadata: &monitoringv1alpha1.AttachMetadata{
+							Node: ptr.To(true),
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_Unsupported_Role_AttachMetadata.golden",
+		},
+		{
+			name: "kubernetes_sd_config_with_selectors",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						Selectors: []monitoringv1alpha1.K8SSelectorConfig{
+							{
+								Role:  "node",
+								Label: "type=infra",
+								Field: "spec.unschedulable=false",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_Selectors.golden",
+		},
+		{
+			name: "kubernetes_sd_config_basic_auth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						BasicAuth: &monitoringv1.BasicAuth{
+							Username: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "Username",
+							},
+							Password: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "Password",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_BasicAuth.golden",
+		}, {
+			name: "kubernetes_sd_config_authorization",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_Authorization.golden",
+		}, {
+			name: "kubernetes_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_OAuth.golden",
+		}, {
+			name: "kubernetes_sd_config_tls",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KubernetesSDConfigs: []monitoringv1alpha1.KubernetesSDConfig{
+					{
+						Role: monitoringv1alpha1.Role("Node"),
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_K8SSD_with_TLSConfig.golden",
+		}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.BasicAuthAssets = map[string]assets.BasicAuthCredentials{
+				"scrapeconfig/default/testscrapeconfig1/kubernetessdconfig/0": {
+					Username: "kube-admin",
+					Password: "password",
+				},
+			}
+
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/kubernetessdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
 			cg := mustNewConfigGenerator(t, p)
 			cfg, err := cg.GenerateServerConfiguration(
 				context.Background(),
@@ -7988,22 +6130,7 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 				nil,
 				nil,
 				scs,
-				&assets.Store{
-					BasicAuthAssets: map[string]assets.BasicAuthCredentials{
-						"scrapeconfig/default/testscrapeconfig1": {
-							Username: "scrape-bob",
-							Password: "scrape-alice",
-						},
-						"scrapeconfig/default/testscrapeconfig1/httpsdconfig/0": {
-							Username: "http-sd-bob",
-							Password: "http-sd-alice",
-						},
-					},
-					TokenAssets: map[string]assets.Token{
-						"scrapeconfig/auth/default/testscrapeconfig1":                assets.Token("scrape-secret"),
-						"scrapeconfig/auth/default/testscrapeconfig1/httpsdconfig/0": assets.Token("http-sd-secret"),
-					},
-				},
+				store,
 				nil,
 				nil,
 				nil,
@@ -8012,6 +6139,7 @@ func TestScrapeConfigSpecConfig(t *testing.T) {
 			require.NoError(t, err)
 			golden.Assert(t, string(cfg), tc.golden)
 		})
+
 	}
 }
 
@@ -8051,17 +6179,19 @@ func TestScrapeConfigSpecConfigWithConsulSD(t *testing.T) {
 							"service": "service_name",
 							"name":    "node_name",
 						},
-						AllowStale:           ptr.To(false),
-						RefreshInterval:      (*monitoringv1.Duration)(ptr.To("30s")),
-						ProxyUrl:             ptr.To("http://no-proxy.com"),
-						NoProxy:              ptr.To("0.0.0.0"),
-						ProxyFromEnvironment: ptr.To(true),
-						ProxyConnectHeader: map[string]v1.SecretKeySelector{
-							"header": {
-								LocalObjectReference: v1.LocalObjectReference{
-									Name: "foo",
+						AllowStale:      ptr.To(false),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "foo",
+									},
+									Key: "proxy-header",
 								},
-								Key: "proxy-header",
 							},
 						},
 						FollowRedirects: ptr.To(true),
@@ -8245,30 +6375,1092 @@ func TestScrapeConfigSpecConfigWithConsulSD(t *testing.T) {
 	}
 }
 
+func TestScrapeConfigSpecConfigWithEC2SD(t *testing.T) {
+	c := fake.NewSimpleClientset(
+		&v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "aws-access-api",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"accessKey": []byte("access-key"),
+				"secretKey": []byte("secret-key"),
+			},
+		},
+	)
+	for _, tc := range []struct {
+		name        string
+		scSpec      monitoringv1alpha1.ScrapeConfigSpec
+		golden      string
+		expectedErr bool
+	}{
+		{
+			name: "ec2_sd_config_valid_with_api_keys",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{
+					{
+						Region: ptr.To("us-east-1"),
+						AccessKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "aws-access-api",
+							},
+							Key: "accessKey",
+						},
+						SecretKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "aws-access-api",
+							},
+							Key: "secretKey",
+						},
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EC2SDConfigValidAPIKeys.golden",
+		},
+		{
+			name: "ec2_sd_config_valid_with_role_arn",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{
+					{
+						Region:          ptr.To("us-east-1"),
+						RoleARN:         ptr.To("arn:aws:iam::123456789:role/prometheus-role"),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EC2SDConfigValidRoleARN.golden",
+		},
+		{
+			name: "ec2_sd_config_valid_with_filters",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{
+					{
+						Region:          ptr.To("us-east-1"),
+						RoleARN:         ptr.To("arn:aws:iam::123456789:role/prometheus-role"),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+						Filters: []*monitoringv1alpha1.EC2Filter{
+							{
+								Name:   "tag:environment",
+								Values: []string{"prod"},
+							},
+							{
+								Name:   "tag:service",
+								Values: []string{"web", "db"},
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EC2SDConfigFilters.golden",
+		},
+		{
+			name: "ec2_sd_config_invalid",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{
+					{
+						Region: ptr.To("us-east-1"),
+						AccessKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "wrong-secret-name",
+							},
+							Key: "accessKey",
+						},
+						SecretKey: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "aws-access-api",
+							},
+							Key: "secretKey",
+						},
+					},
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "ec2_sd_config_empty",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{},
+			},
+			golden: "ScrapeConfigSpecConfig_EC2SDConfigEmpty.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				assets.NewStore(c.CoreV1(), c.CoreV1()),
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithAzureSD(t *testing.T) {
+	c := fake.NewSimpleClientset(
+		&v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "azure-client-secret",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"clientSecret": []byte("my-secret"),
+			},
+		},
+	)
+	for _, tc := range []struct {
+		name        string
+		scSpec      monitoringv1alpha1.ScrapeConfigSpec
+		golden      string
+		expectedErr bool
+	}{
+		{
+			name: "azure_sd_config_valid",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				AzureSDConfigs: []monitoringv1alpha1.AzureSDConfig{
+					{
+						Environment:          ptr.To("AzurePublicCloud"),
+						AuthenticationMethod: ptr.To("OAuth"),
+						SubscriptionID:       "11AAAA11-A11A-111A-A111-1111A1111A11",
+						TenantID:             ptr.To("BBBB222B-B2B2-2B22-B222-2BB2222BB2B2"),
+						ClientID:             ptr.To("333333CC-3C33-3333-CCC3-33C3CCCCC33C"),
+						ClientSecret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "azure-client-secret",
+							},
+							Key: "clientSecret",
+						},
+						ResourceGroup:   ptr.To("my-resource-group"),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_AzureSDConfigValid.golden",
+		},
+		{
+			name: "azure_sd_config_invalid",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				AzureSDConfigs: []monitoringv1alpha1.AzureSDConfig{
+					{
+						ClientSecret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "wrong-secret-name",
+							},
+							Key: "clientSecret",
+						},
+					},
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "azure_sd_config_empty",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EC2SDConfigs: []monitoringv1alpha1.EC2SDConfig{},
+			},
+			golden: "ScrapeConfigSpecConfig_AzureSDConfigEmpty.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				assets.NewStore(c.CoreV1(), c.CoreV1()),
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithGCESD(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		scSpec      monitoringv1alpha1.ScrapeConfigSpec
+		golden      string
+		expectedErr bool
+	}{
+		{
+			name: "gce_sd_config_valid",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				GCESDConfigs: []monitoringv1alpha1.GCESDConfig{
+					{
+						Project:         "devops-dev",
+						Zone:            "us-west-1",
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_GCESDConfigValid.golden",
+		},
+		{
+			name: "gce_sd_config_empty",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				GCESDConfigs: []monitoringv1alpha1.GCESDConfig{},
+			},
+			golden: "ScrapeConfigSpecConfig_GCESDConfigEmpty.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithOpenStackSD(t *testing.T) {
+	c := fake.NewSimpleClientset(
+		&v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "openstack-access-secret",
+				Namespace: "default",
+			},
+			Data: map[string][]byte{
+				"password":                     []byte("password"),
+				"applicationCredentialsSecret": []byte("application-credentials"),
+			},
+		},
+	)
+	for _, tc := range []struct {
+		name        string
+		scSpec      monitoringv1alpha1.ScrapeConfigSpec
+		golden      string
+		expectedErr bool
+	}{
+		{
+			name: "openstack_sd_config_valid",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				OpenStackSDConfigs: []monitoringv1alpha1.OpenStackSDConfig{
+					{
+						Role:             "Instance",
+						Region:           "region-1",
+						IdentityEndpoint: ptr.To("http://identity.example.com:5000/v2.0"),
+						Username:         ptr.To("nova-user-1"),
+						Password: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "openstack-access-secret",
+							},
+							Key: "password",
+						},
+						DomainName:      ptr.To("devops-project-1"),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+						Port:            ptr.To(9100),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_OpenStackSDConfigValid.golden",
+		},
+		{
+			name: "openstack_sd_config_invalid_secret_ref",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				OpenStackSDConfigs: []monitoringv1alpha1.OpenStackSDConfig{
+					{
+						Role:   "Instance",
+						Region: "region-1",
+						ApplicationCredentialSecret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "openstack-access-secret",
+							},
+							Key: "invalid-key",
+						},
+					},
+				},
+			},
+			expectedErr: true,
+		},
+		{
+			name: "openstack_sd_config_empty",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				OpenStackSDConfigs: []monitoringv1alpha1.OpenStackSDConfig{},
+			},
+			golden: "ScrapeConfigSpecConfig_OpenStackSDConfigEmpty.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				assets.NewStore(c.CoreV1(), c.CoreV1()),
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			if tc.expectedErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithDigitalOceanSD(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "digitalocean_sd_config",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DigitalOceanSDConfigs: []monitoringv1alpha1.DigitalOceanSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects: ptr.To(true),
+						EnableHTTP2:     ptr.To(true),
+						Port:            ptr.To(9100),
+						RefreshInterval: ptr.To(monitoringv1.Duration("30s")),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DigitalOceanSD.golden",
+		},
+		{
+			name: "digitalocean_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DigitalOceanSDConfigs: []monitoringv1alpha1.DigitalOceanSDConfig{
+					{
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DigitalOceanSD_with_OAuth.golden",
+		}, {
+			name: "digitalocean_sd_config_tls",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DigitalOceanSDConfigs: []monitoringv1alpha1.DigitalOceanSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DigitalOceanSD_with_TLSConfig.golden",
+		}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+						"credential":   []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/digitaloceansdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithDockerSDConfig(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "docker_sd_config_with_authorization",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DockerSDConfigs: []monitoringv1alpha1.DockerSDConfig{
+					{
+						Host: "hostAddress",
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects:    ptr.To(true),
+						EnableHTTP2:        ptr.To(true),
+						Port:               ptr.To(9100),
+						RefreshInterval:    ptr.To(monitoringv1.Duration("30s")),
+						HostNetworkingHost: ptr.To("localhost"),
+						Filters: &[]monitoringv1alpha1.DockerFilter{
+							{Name: "dummy_label_1",
+								Values: []string{"dummy_value_1"}},
+							{Name: "dummy_label_2",
+								Values: []string{"dummy_value_2", "dummy_value_3"}},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DockerSDConfig.golden",
+		},
+		{
+			name: "docker_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DockerSDConfigs: []monitoringv1alpha1.DockerSDConfig{
+					{
+						Host: "hostAddress",
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+						Filters: &[]monitoringv1alpha1.DockerFilter{
+							{Name: "dummy_label_1",
+								Values: []string{"dummy_value_1"}},
+							{Name: "dummy_label_2",
+								Values: []string{"dummy_value_2", "dummy_value_3"}},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DockerSD_with_OAuth.golden",
+		},
+		{
+			name: "docker_sd_config_basicauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				DockerSDConfigs: []monitoringv1alpha1.DockerSDConfig{
+					{
+						Host: "hostAddress",
+						Filters: &[]monitoringv1alpha1.DockerFilter{
+							{Name: "dummy_label_1",
+								Values: []string{"dummy_value_1"}},
+							{Name: "dummy_label_2",
+								Values: []string{"dummy_value_2", "dummy_value_3"}},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+						BasicAuth: &monitoringv1.BasicAuth{
+							Username: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "foo",
+								},
+								Key: "username",
+							},
+							Password: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "foo",
+								},
+								Key: "password",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_DockerSD_with_BasicAuth.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+						"credential":   []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/dockersdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+			store.BasicAuthAssets = map[string]assets.BasicAuthCredentials{
+				"alertmanager/auth/0": {
+					Username: "bob",
+					Password: "alice",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+func TestScrapeConfigSpecConfigWithHetznerSD(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "hetzner_sd_config",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				HetznerSDConfigs: []monitoringv1alpha1.HetznerSDConfig{
+					{
+						Role: "hcloud",
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects: ptr.To(true),
+						EnableHTTP2:     ptr.To(true),
+						Port:            ptr.To(9100),
+						RefreshInterval: ptr.To(monitoringv1.Duration("5m")),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_HetznerSD.golden",
+		},
+		{
+			name: "hetzner_sd_config_basic_auth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				HetznerSDConfigs: []monitoringv1alpha1.HetznerSDConfig{
+					{
+						Role: "hcloud",
+						BasicAuth: &monitoringv1.BasicAuth{
+							Username: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "Username",
+							},
+							Password: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "Password",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_HetznerSD_with_BasicAuth.golden",
+		}, {
+			name: "hetzner_sd_config_authorization",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				HetznerSDConfigs: []monitoringv1alpha1.HetznerSDConfig{
+					{
+						Role: "hcloud",
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_HetznerSD_with_Authorization.golden",
+		}, {
+			name: "hetzner_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				HetznerSDConfigs: []monitoringv1alpha1.HetznerSDConfig{
+					{
+						Role: "hcloud",
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_HetznerSD_with_OAuth.golden",
+		}, {
+			name: "hetzner_sd_config_tls",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				HetznerSDConfigs: []monitoringv1alpha1.HetznerSDConfig{
+					{
+						Role: "hcloud",
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_HetznerSD_with_TLSConfig.golden",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.BasicAuthAssets = map[string]assets.BasicAuthCredentials{
+				"scrapeconfig/default/testscrapeconfig1/hetznersdconfig/0": {
+					Username: "kube-admin",
+					Password: "password",
+				},
+			}
+
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/hetznersdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
 func TestTracingConfig(t *testing.T) {
 	samplingTwo := resource.MustParse("0.5")
 	testCases := []struct {
-		tracingConfig  *monitoringv1.PrometheusTracingConfig
-		name           string
-		expectedConfig string
-		expectedErr    bool
+		tracingConfig *monitoringv1.PrometheusTracingConfig
+		name          string
+		expectedErr   bool
+		golden        string
 	}{
 		{
 			name: "Config only with endpoint",
 			tracingConfig: &monitoringv1.PrometheusTracingConfig{
 				Endpoint: "https://otel-collector.default.svc.local:3333",
 			},
-
-			expectedConfig: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-tracing:
-  endpoint: https://otel-collector.default.svc.local:3333
-`,
+			golden:      "TracingConfig_Config_only_with_endpoint.golden",
 			expectedErr: false,
 		},
 		{
@@ -8280,28 +7472,12 @@ tracing:
 					"custom": "header",
 				},
 				Compression: ptr.To("gzip"),
-				Timeout:     (*monitoringv1.Duration)(ptr.To("10s")),
+				Timeout:     ptr.To(monitoringv1.Duration("10s")),
 				Insecure:    ptr.To(false),
 			},
 			name:        "Expect valid config",
 			expectedErr: false,
-			expectedConfig: `global:
-  evaluation_interval: 30s
-  scrape_interval: 30s
-  external_labels:
-    prometheus: default/test
-    prometheus_replica: $(POD_NAME)
-scrape_configs: []
-tracing:
-  endpoint: https://otel-collector.default.svc.local:3333
-  client_type: grpc
-  sampling_fraction: 0.5
-  insecure: false
-  headers:
-    custom: header
-  compression: gzip
-  timeout: 10s
-`,
+			golden:      "TracingConfig_Expect_valid_config.golden",
 		},
 	}
 	for _, tc := range testCases {
@@ -8336,7 +7512,1127 @@ tracing:
 			} else {
 				require.NoError(t, err)
 			}
-			require.Equal(t, tc.expectedConfig, string(cfg))
+			golden.Assert(t, string(cfg), tc.golden)
 		})
 	}
+}
+
+func TestScrapeConfigSpecConfigWithKumaSD(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "kuma_sd_config",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KumaSDConfigs: []monitoringv1alpha1.KumaSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects: ptr.To(true),
+						EnableHTTP2:     ptr.To(true),
+						Server:          "127.0.0.1",
+						ClientID:        ptr.To("client"),
+						FetchTimeout:    (*monitoringv1.Duration)(ptr.To("5s")),
+						RefreshInterval: (*monitoringv1.Duration)(ptr.To("30s")),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_KumaSD.golden",
+		},
+		{
+			name: "kuma_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KumaSDConfigs: []monitoringv1alpha1.KumaSDConfig{
+					{
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_KumaSD_with_OAuth.golden",
+		}, {
+			name: "kuma_sd_config_tls",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				KumaSDConfigs: []monitoringv1alpha1.KumaSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_KumaSD_with_TLSConfig.golden",
+		}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+						"credential":   []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/kumasdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func defaultServiceMonitor() *monitoringv1.ServiceMonitor {
+	return &monitoringv1.ServiceMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "defaultServiceMonitor",
+			Namespace: "default",
+			Labels: map[string]string{
+				"group": "group1",
+			},
+		},
+		Spec: monitoringv1.ServiceMonitorSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"group": "group1",
+				},
+			},
+			Endpoints: []monitoringv1.Endpoint{
+				{
+					Port:     "web",
+					Interval: "30s",
+				},
+			},
+		},
+	}
+}
+
+func defaultProbe() *monitoringv1.Probe {
+	return &monitoringv1.Probe{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "defaultProbe",
+			Namespace: "default",
+			Labels: map[string]string{
+				"group": "group1",
+			},
+		},
+		Spec: monitoringv1.ProbeSpec{
+			ProberSpec: monitoringv1.ProberSpec{
+				Scheme: "http",
+				URL:    "blackbox.exporter.io",
+				Path:   "/probe",
+			},
+			Module: "http_2xx",
+			Targets: monitoringv1.ProbeTargets{
+				StaticConfig: &monitoringv1.ProbeTargetStaticConfig{
+					Targets: []string{
+						"prometheus.io",
+						"promcon.io",
+					},
+					Labels: map[string]string{
+						"namespace": "custom",
+						"static":    "label",
+					},
+				},
+			},
+			MetricRelabelConfigs: []*monitoringv1.RelabelConfig{
+				{
+					Regex:  "noisy_labels.*",
+					Action: "labeldrop",
+				},
+			},
+		},
+	}
+}
+
+func defaultPodMonitor() *monitoringv1.PodMonitor {
+	return &monitoringv1.PodMonitor{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "defaultPodMonitor",
+			Namespace: "default",
+			Labels: map[string]string{
+				"group": "group1",
+			},
+		},
+		Spec: monitoringv1.PodMonitorSpec{
+			Selector: metav1.LabelSelector{
+				MatchLabels: map[string]string{
+					"group": "group1",
+				},
+			},
+			PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
+				{
+					Port:     "web",
+					Interval: "30s",
+				},
+			},
+		},
+	}
+}
+
+func defaultScrapeConfig() *monitoringv1alpha1.ScrapeConfig {
+	return &monitoringv1alpha1.ScrapeConfig{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "defaultScrapeConfig",
+			Namespace: "default",
+			Labels: map[string]string{
+				"group": "group1",
+			},
+		},
+		Spec: monitoringv1alpha1.ScrapeConfigSpec{
+			HTTPSDConfigs: []monitoringv1alpha1.HTTPSDConfig{
+				{
+					URL:             "http://localhost:9100/sd.json",
+					RefreshInterval: ptr.To(monitoringv1.Duration("5m")),
+					ProxyConfig: monitoringv1.ProxyConfig{
+						ProxyURL:             ptr.To("http://no-proxy.com"),
+						NoProxy:              ptr.To("0.0.0.0"),
+						ProxyFromEnvironment: ptr.To(false),
+					},
+				},
+			},
+		},
+	}
+}
+
+func TestScrapeClass(t *testing.T) {
+	testCases := []struct {
+		name        string
+		scrapeClass []monitoringv1.ScrapeClass
+		tlsConfig   *monitoringv1.TLSConfig
+		golden      string
+	}{
+		{
+			name:        "Monitor Object without Scrape Class",
+			golden:      "monitorObjectWithoutScrapeClass.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{},
+		},
+		{
+			name:   "Monitor object with Non Default Scrape Class and TLS Config",
+			golden: "monitorObjectWithNonDefaultScrapeClassAndTLSConfig.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name: "test-tls-scrape-class",
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/ca.crt",
+						CertFile: "/etc/prometheus/secrets/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/tls.key",
+					},
+				},
+			},
+		},
+		{
+			name:   "Monitor object with Default Scrape Class and TLS Config",
+			golden: "monitorObjectWithDefaultScrapeClassAndTLSConfig.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name:    "test-tls-scrape-class",
+					Default: ptr.To(true),
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/default/ca.crt",
+						CertFile: "/etc/prometheus/secrets/default/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/default/tls.key",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		prometheus := defaultPrometheus()
+		serviceMonitor := defaultServiceMonitor()
+		podMonitor := defaultPodMonitor()
+		probe := defaultProbe()
+		scrapeConfig := defaultScrapeConfig()
+
+		for _, sc := range tc.scrapeClass {
+			prometheus.Spec.ScrapeClasses = append(prometheus.Spec.ScrapeClasses, sc)
+			if sc.Default == nil {
+				serviceMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+				podMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+				probe.Spec.ScrapeClassName = ptr.To(sc.Name)
+				scrapeConfig.Spec.ScrapeClassName = ptr.To(sc.Name)
+			}
+		}
+
+		cg := mustNewConfigGenerator(t, prometheus)
+
+		cfg, err := cg.GenerateServerConfiguration(
+			context.Background(),
+			prometheus.Spec.EvaluationInterval,
+			prometheus.Spec.QueryLogFile,
+			prometheus.Spec.RuleSelector,
+			prometheus.Spec.Exemplars,
+			prometheus.Spec.TSDB,
+			prometheus.Spec.Alerting,
+			prometheus.Spec.RemoteRead,
+			map[string]*monitoringv1.ServiceMonitor{"monitor": serviceMonitor},
+			map[string]*monitoringv1.PodMonitor{"monitor": podMonitor},
+			map[string]*monitoringv1.Probe{"monitor": probe},
+			map[string]*monitoringv1alpha1.ScrapeConfig{"monitor": scrapeConfig},
+			&assets.Store{},
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		golden.Assert(t, string(cfg), tc.golden)
+	}
+}
+
+func TestServiceMonitorScrapeClassWithDefaultTls(t *testing.T) {
+	testCases := []struct {
+		name        string
+		scrapeClass []monitoringv1.ScrapeClass
+		tlsConfig   *monitoringv1.TLSConfig
+		golden      string
+	}{
+		{
+			name:   "Monitor object with Non Default Scrape Class and existing TLS Config",
+			golden: "serviceMonitorObjectWithNonDefaultScrapeClassAndExistingTLSConfig.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name: "test-tls-scrape-class",
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/ca.crt",
+						CertFile: "/etc/prometheus/secrets/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/tls.key",
+					},
+				},
+			},
+			tlsConfig: &monitoringv1.TLSConfig{
+				SafeTLSConfig: monitoringv1.SafeTLSConfig{
+					CA: monitoringv1.SecretOrConfigMap{
+						Secret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "secret-ca-global",
+							},
+						},
+					},
+					Cert: monitoringv1.SecretOrConfigMap{
+						Secret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "secret-cert",
+							},
+						},
+					},
+					KeySecret: &v1.SecretKeySelector{
+						LocalObjectReference: v1.LocalObjectReference{
+							Name: "secret",
+						},
+						Key: "key",
+					},
+				},
+			},
+		},
+		{
+			name:   "Monitor object with Non Default Scrape Class and existing TLS config missing ca",
+			golden: "serviceMonitorObjectWithNonDefaultScrapeClassAndExistingTLSConfigMissingCA.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name: "test-tls-scrape-class",
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/ca.crt",
+						CertFile: "/etc/prometheus/secrets/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/tls.key",
+					},
+				},
+			},
+			tlsConfig: &monitoringv1.TLSConfig{
+				SafeTLSConfig: monitoringv1.SafeTLSConfig{
+					Cert: monitoringv1.SecretOrConfigMap{
+						Secret: &v1.SecretKeySelector{
+							LocalObjectReference: v1.LocalObjectReference{
+								Name: "secret-cert",
+							},
+						},
+					},
+					KeySecret: &v1.SecretKeySelector{
+						LocalObjectReference: v1.LocalObjectReference{
+							Name: "secret",
+						},
+						Key: "key",
+					},
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		prometheus := defaultPrometheus()
+		serviceMonitor := defaultServiceMonitor()
+
+		for _, sc := range tc.scrapeClass {
+			prometheus.Spec.ScrapeClasses = append(prometheus.Spec.ScrapeClasses, sc)
+			if sc.Default == nil {
+				serviceMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+			}
+		}
+
+		serviceMonitor.Spec.Endpoints[0].TLSConfig = tc.tlsConfig
+
+		cg := mustNewConfigGenerator(t, prometheus)
+
+		cfg, err := cg.GenerateServerConfiguration(
+			context.Background(),
+			prometheus.Spec.EvaluationInterval,
+			prometheus.Spec.QueryLogFile,
+			prometheus.Spec.RuleSelector,
+			prometheus.Spec.Exemplars,
+			prometheus.Spec.TSDB,
+			prometheus.Spec.Alerting,
+			prometheus.Spec.RemoteRead,
+			map[string]*monitoringv1.ServiceMonitor{"monitor": serviceMonitor},
+			nil,
+			nil,
+			nil,
+			&assets.Store{},
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		golden.Assert(t, string(cfg), tc.golden)
+	}
+}
+
+func TestPodMonitorScrapeClassWithDefaultTls(t *testing.T) {
+	testCases := []struct {
+		name        string
+		scrapeClass []monitoringv1.ScrapeClass
+		tlsConfig   *monitoringv1.SafeTLSConfig
+		golden      string
+	}{
+		{
+			name:   "Monitor object with Non Default Scrape Class and existing TLS Config",
+			golden: "podMonitorObjectWithNonDefaultScrapeClassAndExistingTLSConfig.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name: "test-tls-scrape-class",
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/ca.crt",
+						CertFile: "/etc/prometheus/secrets/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/tls.key",
+					},
+				},
+			},
+			tlsConfig: &monitoringv1.SafeTLSConfig{
+				CA: monitoringv1.SecretOrConfigMap{
+					Secret: &v1.SecretKeySelector{
+						LocalObjectReference: v1.LocalObjectReference{
+							Name: "secret-ca-global",
+						},
+					},
+				},
+				Cert: monitoringv1.SecretOrConfigMap{
+					Secret: &v1.SecretKeySelector{
+						LocalObjectReference: v1.LocalObjectReference{
+							Name: "secret-cert",
+						},
+					},
+				},
+				KeySecret: &v1.SecretKeySelector{
+					LocalObjectReference: v1.LocalObjectReference{
+						Name: "secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+		{
+			name:   "Monitor object with Non Default Scrape Class and existing TLS config missing ca",
+			golden: "podMonitorObjectWithNonDefaultScrapeClassAndExistingTLSConfigMissingCA.golden",
+			scrapeClass: []monitoringv1.ScrapeClass{
+				{
+					Name: "test-tls-scrape-class",
+					TLSConfig: &monitoringv1.TLSConfig{
+						CAFile:   "/etc/prometheus/secrets/ca.crt",
+						CertFile: "/etc/prometheus/secrets/tls.crt",
+						KeyFile:  "/etc/prometheus/secrets/tls.key",
+					},
+				},
+			},
+			tlsConfig: &monitoringv1.SafeTLSConfig{
+				Cert: monitoringv1.SecretOrConfigMap{
+					Secret: &v1.SecretKeySelector{
+						LocalObjectReference: v1.LocalObjectReference{
+							Name: "secret-cert",
+						},
+					},
+				},
+				KeySecret: &v1.SecretKeySelector{
+					LocalObjectReference: v1.LocalObjectReference{
+						Name: "secret",
+					},
+					Key: "key",
+				},
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		prometheus := defaultPrometheus()
+		podMonitor := defaultPodMonitor()
+
+		for _, sc := range tc.scrapeClass {
+			prometheus.Spec.ScrapeClasses = append(prometheus.Spec.ScrapeClasses, sc)
+			if sc.Default == nil {
+				podMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+			}
+		}
+		podMonitor.Spec.PodMetricsEndpoints[0].TLSConfig = tc.tlsConfig
+
+		cg := mustNewConfigGenerator(t, prometheus)
+
+		cfg, err := cg.GenerateServerConfiguration(
+			context.Background(),
+			prometheus.Spec.EvaluationInterval,
+			prometheus.Spec.QueryLogFile,
+			prometheus.Spec.RuleSelector,
+			prometheus.Spec.Exemplars,
+			prometheus.Spec.TSDB,
+			prometheus.Spec.Alerting,
+			prometheus.Spec.RemoteRead,
+			nil,
+			map[string]*monitoringv1.PodMonitor{"monitor": podMonitor},
+			nil,
+			nil,
+			&assets.Store{},
+			nil,
+			nil,
+			nil,
+			nil,
+		)
+		require.NoError(t, err)
+		golden.Assert(t, string(cfg), tc.golden)
+	}
+}
+
+func TestNewConfigGeneratorWithMultipleDefaultScrapeClass(t *testing.T) {
+	logger := level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowWarn())
+	p := defaultPrometheus()
+	p.Spec.ScrapeClasses = []monitoringv1.ScrapeClass{
+		{
+			Name:    "test-default-scrape-class",
+			Default: ptr.To(true),
+			TLSConfig: &monitoringv1.TLSConfig{
+				CAFile:   "/etc/prometheus/secrets/ca.crt",
+				CertFile: "/etc/prometheus/secrets/tls.crt",
+				KeyFile:  "/etc/prometheus/secrets/tls.key",
+			},
+		},
+		{
+			Name:    "test-default-scrape-class-2",
+			Default: ptr.To(true),
+			TLSConfig: &monitoringv1.TLSConfig{
+				CAFile:   "/etc/prometheus/secrets/ca.crt",
+				CertFile: "/etc/prometheus/secrets/tls.crt",
+				KeyFile:  "/etc/prometheus/secrets/tls.key",
+			},
+		},
+	}
+	_, err := NewConfigGenerator(log.With(logger, "test", "NewConfigGeneratorWithMultipleDefaultScrapeClass"), p, false)
+	require.Error(t, err)
+	require.Equal(t, "failed to parse scrape classes: multiple default scrape classes defined", err.Error())
+}
+
+func TestMergeTLSConfigWithScrapeClass(t *testing.T) {
+	tests := []struct {
+		name           string
+		tlsConfig      *monitoringv1.TLSConfig
+		scrapeClass    *monitoringv1.ScrapeClass
+		expectedConfig *monitoringv1.TLSConfig
+		cg             *ConfigGenerator
+	}{
+		{
+			name:        "nil TLSConfig and ScrapeClass with default",
+			tlsConfig:   nil,
+			scrapeClass: nil,
+			expectedConfig: &monitoringv1.TLSConfig{
+				CAFile:   "defaultCAFile",
+				CertFile: "defaultCertFile",
+				KeyFile:  "defaultKeyFile",
+			},
+			cg: &ConfigGenerator{
+				defaultScrapeClassName: "default",
+				scrapeClasses: map[string]*monitoringv1.ScrapeClass{
+					"default": {
+						TLSConfig: &monitoringv1.TLSConfig{
+							CAFile:   "defaultCAFile",
+							CertFile: "defaultCertFile",
+							KeyFile:  "defaultKeyFile",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "nil TLSConfig and ScrapeClass without default",
+			tlsConfig:      nil,
+			scrapeClass:    nil,
+			expectedConfig: nil,
+			cg: &ConfigGenerator{
+				scrapeClasses: map[string]*monitoringv1.ScrapeClass{
+					"default": {
+						TLSConfig: &monitoringv1.TLSConfig{
+							CAFile:   "defaultCAFile",
+							CertFile: "defaultCertFile",
+							KeyFile:  "defaultKeyFile",
+						},
+					},
+				},
+			},
+		},
+		{
+			name: "non-nil TLSConfig and nil ScrapeClass",
+			tlsConfig: &monitoringv1.TLSConfig{
+				CAFile:   "caFile",
+				CertFile: "certFile",
+				KeyFile:  "keyFile",
+			},
+			scrapeClass: nil,
+			expectedConfig: &monitoringv1.TLSConfig{
+				CAFile:   "caFile",
+				CertFile: "certFile",
+				KeyFile:  "keyFile",
+			},
+			cg: &ConfigGenerator{
+				defaultScrapeClassName: "default",
+				scrapeClasses: map[string]*monitoringv1.ScrapeClass{
+					"default": {
+						TLSConfig: &monitoringv1.TLSConfig{
+							CAFile:   "defaultCAFile",
+							CertFile: "defaultCertFile",
+							KeyFile:  "defaultKeyFile",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "nil TLSConfig and non-nil ScrapeClass",
+			tlsConfig: nil,
+			scrapeClass: &monitoringv1.ScrapeClass{
+				Name: "default",
+			},
+			expectedConfig: &monitoringv1.TLSConfig{
+				CAFile:   "defaultCAFile",
+				CertFile: "defaultCertFile",
+				KeyFile:  "defaultKeyFile",
+			},
+			cg: &ConfigGenerator{
+				defaultScrapeClassName: "default",
+				scrapeClasses: map[string]*monitoringv1.ScrapeClass{
+					"default": {
+						TLSConfig: &monitoringv1.TLSConfig{
+							CAFile:   "defaultCAFile",
+							CertFile: "defaultCertFile",
+							KeyFile:  "defaultKeyFile",
+						},
+					},
+				},
+			},
+		},
+		{
+			name:      "nil TLSConfig, non-nil ScrapeClass with nil TLSConfig",
+			tlsConfig: nil,
+			scrapeClass: &monitoringv1.ScrapeClass{
+				Name:      "default",
+				TLSConfig: nil,
+			},
+			expectedConfig: &monitoringv1.TLSConfig{
+				CAFile:   "defaultCAFile",
+				CertFile: "defaultCertFile",
+				KeyFile:  "defaultKeyFile",
+			},
+			cg: &ConfigGenerator{
+				defaultScrapeClassName: "default",
+				scrapeClasses: map[string]*monitoringv1.ScrapeClass{
+					"default": {
+						TLSConfig: &monitoringv1.TLSConfig{
+							CAFile:   "defaultCAFile",
+							CertFile: "defaultCertFile",
+							KeyFile:  "defaultKeyFile",
+						},
+					},
+				},
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			result := tt.cg.MergeTLSConfigWithScrapeClass(tt.tlsConfig, tt.scrapeClass)
+			require.Equal(t, tt.expectedConfig, result, "expected %v, got %v", tt.expectedConfig, result)
+		})
+	}
+}
+
+func TestScrapeConfigSpecConfigWithEurekaSD(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		scSpec monitoringv1alpha1.ScrapeConfigSpec
+		golden string
+	}{
+		{
+			name: "eureka_sd_config",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EurekaSDConfigs: []monitoringv1alpha1.EurekaSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						ProxyConfig: monitoringv1.ProxyConfig{
+							ProxyURL:             ptr.To("http://no-proxy.com"),
+							NoProxy:              ptr.To("0.0.0.0"),
+							ProxyFromEnvironment: ptr.To(true),
+							ProxyConnectHeader: map[string]v1.SecretKeySelector{
+								"header": {
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret",
+									},
+									Key: "proxy-header",
+								},
+							},
+						},
+						FollowRedirects: ptr.To(true),
+						EnableHTTP2:     ptr.To(true),
+						Server:          "127.0.0.1",
+						RefreshInterval: (*monitoringv1.Duration)(ptr.To("30s")),
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EurekaSD.golden",
+		},
+		{
+			name: "eureka_sd_config_oauth",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EurekaSDConfigs: []monitoringv1alpha1.EurekaSDConfig{
+					{
+						OAuth2: &monitoringv1.OAuth2{
+							ClientID: monitoringv1.SecretOrConfigMap{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "oauth2",
+									},
+									Key: "client_id",
+								},
+							},
+							ClientSecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "oauth2",
+								},
+								Key: "client_secret",
+							},
+							TokenURL: "http://test.url",
+							Scopes:   []string{"scope 1", "scope 2"},
+							EndpointParams: map[string]string{
+								"param1": "value1",
+								"param2": "value2",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EurekaSD_with_OAuth.golden",
+		}, {
+			name: "eureka_sd_config_tls",
+			scSpec: monitoringv1alpha1.ScrapeConfigSpec{
+				EurekaSDConfigs: []monitoringv1alpha1.EurekaSDConfig{
+					{
+						Authorization: &monitoringv1.SafeAuthorization{
+							Credentials: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "credential",
+							},
+						},
+						TLSConfig: &monitoringv1.SafeTLSConfig{
+							CA: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-ca",
+									},
+								},
+							},
+							Cert: monitoringv1.SecretOrConfigMap{
+								Secret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
+										Name: "secret-cert",
+									},
+								},
+							},
+							KeySecret: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
+									Name: "secret",
+								},
+								Key: "key",
+							},
+						},
+					},
+				},
+			},
+			golden: "ScrapeConfigSpecConfig_EurekaSD_with_TLSConfig.golden",
+		}} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := fake.NewSimpleClientset(
+				&v1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "secret",
+						Namespace: "default",
+					},
+					Data: map[string][]byte{
+						"proxy-header": []byte("value"),
+						"token":        []byte("value"),
+						"credential":   []byte("value"),
+					},
+				},
+			)
+			store := assets.NewStore(c.CoreV1(), c.CoreV1())
+			store.OAuth2Assets = map[string]assets.OAuth2Credentials{
+				"scrapeconfig/default/testscrapeconfig1/eurekasdconfig/0": {
+					ClientID:     "client-id",
+					ClientSecret: "client-secret",
+				},
+			}
+
+			scs := map[string]*monitoringv1alpha1.ScrapeConfig{
+				"sc": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "testscrapeconfig1",
+						Namespace: "default",
+					},
+					Spec: tc.scSpec,
+				},
+			}
+
+			p := defaultPrometheus()
+			cg := mustNewConfigGenerator(t, p)
+			cfg, err := cg.GenerateServerConfiguration(
+				context.Background(),
+				p.Spec.EvaluationInterval,
+				p.Spec.QueryLogFile,
+				nil,
+				nil,
+				p.Spec.TSDB,
+				nil,
+				nil,
+				nil,
+				nil,
+				nil,
+				scs,
+				store,
+				nil,
+				nil,
+				nil,
+				nil,
+			)
+			require.NoError(t, err)
+			golden.Assert(t, string(cfg), tc.golden)
+		})
+	}
+}
+
+func TestServiceMonitorWithDefaultScrapeClassRelabelings(t *testing.T) {
+	prometheus := defaultPrometheus()
+	serviceMonitor := defaultServiceMonitor()
+	scrapeClasses := []monitoringv1.ScrapeClass{
+		{
+			Name:    "default",
+			Default: ptr.To(true),
+			Relabelings: []*monitoringv1.RelabelConfig{
+				{
+					Action:       "replace",
+					SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_app_name"},
+					TargetLabel:  "app",
+				},
+			},
+		},
+		{
+			Name: "not-default",
+			Relabelings: []*monitoringv1.RelabelConfig{
+				{
+					Action:       "replace",
+					SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_node_name"},
+					TargetLabel:  "node",
+				},
+			},
+		},
+	}
+
+	prometheus.Spec.ScrapeClasses = scrapeClasses
+	cg := mustNewConfigGenerator(t, prometheus)
+
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		prometheus.Spec.EvaluationInterval,
+		prometheus.Spec.QueryLogFile,
+		prometheus.Spec.RuleSelector,
+		prometheus.Spec.Exemplars,
+		prometheus.Spec.TSDB,
+		prometheus.Spec.Alerting,
+		prometheus.Spec.RemoteRead,
+		map[string]*monitoringv1.ServiceMonitor{"monitor": serviceMonitor},
+		nil,
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "serviceMonitorObjectWithDefaultScrapeClassWithRelabelings.golden")
+}
+
+func TestServiceMonitorWithNonDefaultScrapeClassRelabelings(t *testing.T) {
+	prometheus := defaultPrometheus()
+	serviceMonitor := defaultServiceMonitor()
+	sc := monitoringv1.ScrapeClass{
+		Name: "test-extra-relabelings-scrape-class",
+		Relabelings: []*monitoringv1.RelabelConfig{
+			{
+				Action:       "replace",
+				SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_node_name"},
+				TargetLabel:  "node",
+			},
+		},
+	}
+
+	prometheus.Spec.ScrapeClasses = append(prometheus.Spec.ScrapeClasses, sc)
+	serviceMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+	cg := mustNewConfigGenerator(t, prometheus)
+
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		prometheus.Spec.EvaluationInterval,
+		prometheus.Spec.QueryLogFile,
+		prometheus.Spec.RuleSelector,
+		prometheus.Spec.Exemplars,
+		prometheus.Spec.TSDB,
+		prometheus.Spec.Alerting,
+		prometheus.Spec.RemoteRead,
+		map[string]*monitoringv1.ServiceMonitor{"monitor": serviceMonitor},
+		nil,
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "serviceMonitorObjectWithNonDefaultScrapeClassWithRelabelings.golden")
+}
+
+func TestPodMonitorWithDefaultScrapeClassRelabelings(t *testing.T) {
+	prometheus := defaultPrometheus()
+	podMonitor := defaultPodMonitor()
+	scrapeClasses := []monitoringv1.ScrapeClass{
+		{
+			Name:    "default",
+			Default: ptr.To(true),
+			Relabelings: []*monitoringv1.RelabelConfig{
+				{
+					Action:       "replace",
+					SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_app_name"},
+					TargetLabel:  "app",
+				},
+			},
+		},
+		{
+			Name: "not-default",
+			Relabelings: []*monitoringv1.RelabelConfig{
+				{
+					Action:       "replace",
+					SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_node_name"},
+					TargetLabel:  "node",
+				},
+			},
+		},
+	}
+
+	prometheus.Spec.ScrapeClasses = scrapeClasses
+	cg := mustNewConfigGenerator(t, prometheus)
+
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		prometheus.Spec.EvaluationInterval,
+		prometheus.Spec.QueryLogFile,
+		prometheus.Spec.RuleSelector,
+		prometheus.Spec.Exemplars,
+		prometheus.Spec.TSDB,
+		prometheus.Spec.Alerting,
+		prometheus.Spec.RemoteRead,
+		nil,
+		map[string]*monitoringv1.PodMonitor{"monitor": podMonitor},
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "podMonitorObjectWithDefaultScrapeClassWithRelabelings.golden")
+}
+
+func TestPodMonitorWithNonDefaultScrapeClassRelabelings(t *testing.T) {
+	prometheus := defaultPrometheus()
+	podMonitor := defaultPodMonitor()
+	sc := monitoringv1.ScrapeClass{
+		Name: "test-extra-relabelings-scrape-class",
+		Relabelings: []*monitoringv1.RelabelConfig{
+			{
+				Action:       "replace",
+				SourceLabels: []monitoringv1.LabelName{"__meta_kubernetes_pod_node_name"},
+				TargetLabel:  "node",
+			},
+		},
+	}
+
+	prometheus.Spec.ScrapeClasses = append(prometheus.Spec.ScrapeClasses, sc)
+	podMonitor.Spec.ScrapeClassName = ptr.To(sc.Name)
+	cg := mustNewConfigGenerator(t, prometheus)
+
+	cfg, err := cg.GenerateServerConfiguration(
+		context.Background(),
+		prometheus.Spec.EvaluationInterval,
+		prometheus.Spec.QueryLogFile,
+		prometheus.Spec.RuleSelector,
+		prometheus.Spec.Exemplars,
+		prometheus.Spec.TSDB,
+		prometheus.Spec.Alerting,
+		prometheus.Spec.RemoteRead,
+		nil,
+		map[string]*monitoringv1.PodMonitor{"monitor": podMonitor},
+		nil,
+		nil,
+		&assets.Store{},
+		nil,
+		nil,
+		nil,
+		nil,
+	)
+	require.NoError(t, err)
+	golden.Assert(t, string(cfg), "podMonitorObjectWithNonDefaultScrapeClassWithRelabelings.golden")
 }

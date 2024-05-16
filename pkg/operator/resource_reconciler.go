@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
@@ -75,6 +74,8 @@ type ResourceReconciler struct {
 	reconcileTotal    prometheus.Counter
 	reconcileErrors   prometheus.Counter
 	reconcileDuration prometheus.Histogram
+	statusTotal       prometheus.Counter
+	statusErrors      prometheus.Counter
 
 	metrics ReconcilerMetrics
 
@@ -84,10 +85,16 @@ type ResourceReconciler struct {
 	statusQ workqueue.RateLimitingInterface
 
 	g errgroup.Group
+
+	controllerID string
 }
 
 var (
 	_ = cache.ResourceEventHandler(&ResourceReconciler{})
+)
+
+const (
+	controllerIDAnnotation = "operator.prometheus.io/controller-id"
 )
 
 // NewResourceReconciler returns a reconciler for the "kind" resource.
@@ -97,6 +104,7 @@ func NewResourceReconciler(
 	metrics ReconcilerMetrics,
 	kind string,
 	reg prometheus.Registerer,
+	controllerID string,
 ) *ResourceReconciler {
 	reconcileTotal := prometheus.NewCounter(prometheus.CounterOpts{
 		Name: "prometheus_operator_reconcile_operations_total",
@@ -114,7 +122,17 @@ func NewResourceReconciler(
 		Buckets: []float64{.1, .5, 1, 5, 10},
 	})
 
-	reg.MustRegister(reconcileTotal, reconcileErrors, reconcileDuration)
+	statusTotal := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_operator_status_update_operations_total",
+		Help: "Total number of update operations to status subresources",
+	})
+
+	statusErrors := prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "prometheus_operator_status_update_errors_total",
+		Help: "Number of errors that occurred during update operations to status subresources",
+	})
+
+	reg.MustRegister(reconcileTotal, reconcileErrors, reconcileDuration, statusTotal, statusErrors)
 
 	qname := strings.ToLower(kind)
 
@@ -132,7 +150,10 @@ func NewResourceReconciler(
 		reconcileTotal:    reconcileTotal,
 		reconcileErrors:   reconcileErrors,
 		reconcileDuration: reconcileDuration,
+		statusTotal:       statusTotal,
+		statusErrors:      statusErrors,
 		metrics:           metrics,
+		controllerID:      controllerID,
 
 		reconcileQ: workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), qname),
 		statusQ:    workqueue.NewNamedRateLimitingQueue(workqueue.DefaultControllerRateLimiter(), qname+"_status"),
@@ -218,6 +239,7 @@ func (rr *ResourceReconciler) objectKey(obj interface{}) (string, bool) {
 
 // OnAdd implements the cache.ResourceEventHandler interface.
 func (rr *ResourceReconciler) OnAdd(obj interface{}, _ bool) {
+
 	if _, ok := obj.(*appsv1.StatefulSet); ok {
 		rr.onStatefulSetAdd(obj.(*appsv1.StatefulSet))
 		return
@@ -225,6 +247,15 @@ func (rr *ResourceReconciler) OnAdd(obj interface{}, _ bool) {
 
 	key, ok := rr.objectKey(obj)
 	if !ok {
+		return
+	}
+
+	objMeta, err := meta.Accessor(obj)
+	if err != nil {
+		return
+	}
+
+	if !rr.isManagedByController(objMeta) {
 		return
 	}
 
@@ -256,6 +287,10 @@ func (rr *ResourceReconciler) OnUpdate(old, cur interface{}) {
 		level.Error(rr.logger).Log("err", fmt.Sprintf("failed to get object meta: %s", err), "key", key)
 	}
 
+	if !rr.isManagedByController(mCur) {
+		return
+	}
+
 	if rr.DeletionInProgress(mCur) {
 		return
 	}
@@ -282,6 +317,15 @@ func (rr *ResourceReconciler) OnDelete(obj interface{}) {
 		return
 	}
 
+	objMeta, err := meta.Accessor(obj)
+	if err != nil {
+		return
+	}
+
+	if !rr.isManagedByController(objMeta) {
+		return
+	}
+
 	level.Debug(rr.logger).Log("msg", fmt.Sprintf("%s deleted", rr.resourceKind), "key", key)
 	rr.metrics.TriggerByCounter(rr.resourceKind, DeleteEvent).Inc()
 
@@ -301,7 +345,7 @@ func (rr *ResourceReconciler) onStatefulSetAdd(ss *appsv1.StatefulSet) {
 }
 
 func (rr *ResourceReconciler) onStatefulSetUpdate(old, cur *appsv1.StatefulSet) {
-	level.Debug(rr.logger).Log("msg", "update handler", "old", old.ResourceVersion, "cur", cur.ResourceVersion)
+	level.Debug(rr.logger).Log("msg", "update handler", "resource", "statefulset", "old", old.ResourceVersion, "cur", cur.ResourceVersion)
 
 	if rr.DeletionInProgress(cur) {
 		return
@@ -344,11 +388,19 @@ func (rr *ResourceReconciler) onStatefulSetDelete(ss *appsv1.StatefulSet) {
 
 // EnqueueForReconciliation asks for reconciling the object.
 func (rr *ResourceReconciler) EnqueueForReconciliation(obj metav1.Object) {
+	if !rr.isManagedByController(obj) {
+		return
+	}
+
 	rr.reconcileQ.Add(obj.GetNamespace() + "/" + obj.GetName())
 }
 
 // EnqueueForStatus asks for updating the status of the object.
 func (rr *ResourceReconciler) EnqueueForStatus(obj metav1.Object) {
+	if !rr.isManagedByController(obj) {
+		return
+	}
+
 	rr.statusQ.Add(obj.GetNamespace() + "/" + obj.GetName())
 }
 
@@ -403,7 +455,7 @@ func (rr *ResourceReconciler) processNextReconcileItem(ctx context.Context) bool
 	}
 
 	rr.reconcileErrors.Inc()
-	utilruntime.HandleError(errors.Wrap(err, fmt.Sprintf("sync %q failed", key)))
+	utilruntime.HandleError(fmt.Errorf("sync %q failed: %w", key, err))
 	rr.reconcileQ.AddRateLimited(key)
 
 	return true
@@ -418,13 +470,15 @@ func (rr *ResourceReconciler) processNextStatusItem(ctx context.Context) bool {
 	key := item.(string)
 	defer rr.statusQ.Done(key)
 
+	rr.statusTotal.Inc()
 	err := rr.syncer.UpdateStatus(ctx, key)
 	if err == nil {
 		rr.statusQ.Forget(key)
 		return true
 	}
 
-	utilruntime.HandleError(errors.Wrap(err, fmt.Sprintf("status %q failed", key)))
+	rr.statusErrors.Inc()
+	utilruntime.HandleError(fmt.Errorf("status %q failed: %w", key, err))
 	rr.statusQ.AddRateLimited(key)
 
 	return true
@@ -438,7 +492,25 @@ func ListMatchingNamespaces(selector labels.Selector, nsInf cache.SharedIndexInf
 		ns = append(ns, obj.(*v1.Namespace).Name)
 	})
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to list namespaces")
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
 	}
 	return ns, nil
+}
+
+// isManagedByController returns true if the controller is the "owner" of the object.
+// Whether it's owner is determined by the value of 'controllerID'
+// annotation. If the value matches the controllerID then it owns it.
+func (rr *ResourceReconciler) isManagedByController(obj metav1.Object) bool {
+	var controllerID string
+
+	if obj.GetAnnotations() != nil {
+		controllerID = obj.GetAnnotations()[controllerIDAnnotation]
+	}
+
+	if controllerID != rr.controllerID {
+		level.Debug(rr.logger).Log("msg", "skipping object not managed by the controller", "object", fmt.Sprintf("%s/%s", obj.GetNamespace(), obj.GetName()), "object_id", controllerID, "controller_id", rr.controllerID)
+		return false
+	}
+
+	return true
 }

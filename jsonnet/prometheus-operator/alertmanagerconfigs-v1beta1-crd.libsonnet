@@ -4,7 +4,7 @@
     name: 'v1beta1',
     schema: {
       openAPIV3Schema: {
-        description: 'AlertmanagerConfig defines a namespaced AlertmanagerConfig to be aggregated across multiple namespaces configuring one Alertmanager cluster.',
+        description: 'AlertmanagerConfig configures the Prometheus Alertmanager, specifying how alerts should be grouped, inhibited and notified to external systems.',
         properties: {
           apiVersion: {
             description: 'APIVersion defines the versioned schema of this representation of an object. Servers should convert recognized schemas to the latest internal value, and may reject unrecognized values. More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources',
@@ -172,7 +172,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -194,7 +194,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -246,7 +246,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -296,7 +296,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -321,18 +321,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -753,6 +753,411 @@
                       },
                       type: 'array',
                     },
+                    msteamsConfigs: {
+                      description: 'List of MSTeams configurations. It requires Alertmanager >= 0.26.0.',
+                      items: {
+                        description: 'MSTeamsConfig configures notifications via Microsoft Teams. It requires Alertmanager >= 0.26.0.',
+                        properties: {
+                          httpConfig: {
+                            description: 'HTTP client configuration.',
+                            properties: {
+                              authorization: {
+                                description: 'Authorization header configuration for the client. This is mutually exclusive with BasicAuth and is only available starting from Alertmanager v0.22+.',
+                                properties: {
+                                  credentials: {
+                                    description: 'Selects a key of a Secret in the namespace that contains the credentials for authentication.',
+                                    properties: {
+                                      key: {
+                                        description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                        type: 'string',
+                                      },
+                                      name: {
+                                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                        type: 'string',
+                                      },
+                                      optional: {
+                                        description: 'Specify whether the Secret or its key must be defined',
+                                        type: 'boolean',
+                                      },
+                                    },
+                                    required: [
+                                      'key',
+                                    ],
+                                    type: 'object',
+                                    'x-kubernetes-map-type': 'atomic',
+                                  },
+                                  type: {
+                                    description: 'Defines the authentication type. The value is case-insensitive. \n "Basic" is not a supported value. \n Default: "Bearer"',
+                                    type: 'string',
+                                  },
+                                },
+                                type: 'object',
+                              },
+                              basicAuth: {
+                                description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
+                                properties: {
+                                  password: {
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
+                                    properties: {
+                                      key: {
+                                        description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                        type: 'string',
+                                      },
+                                      name: {
+                                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                        type: 'string',
+                                      },
+                                      optional: {
+                                        description: 'Specify whether the Secret or its key must be defined',
+                                        type: 'boolean',
+                                      },
+                                    },
+                                    required: [
+                                      'key',
+                                    ],
+                                    type: 'object',
+                                    'x-kubernetes-map-type': 'atomic',
+                                  },
+                                  username: {
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
+                                    properties: {
+                                      key: {
+                                        description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                        type: 'string',
+                                      },
+                                      name: {
+                                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                        type: 'string',
+                                      },
+                                      optional: {
+                                        description: 'Specify whether the Secret or its key must be defined',
+                                        type: 'boolean',
+                                      },
+                                    },
+                                    required: [
+                                      'key',
+                                    ],
+                                    type: 'object',
+                                    'x-kubernetes-map-type': 'atomic',
+                                  },
+                                },
+                                type: 'object',
+                              },
+                              bearerTokenSecret: {
+                                description: "The secret's key that contains the bearer token to be used by the client for authentication. The secret needs to be in the same namespace as the AlertmanagerConfig object and accessible by the Prometheus Operator.",
+                                properties: {
+                                  key: {
+                                    description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                    minLength: 1,
+                                    type: 'string',
+                                  },
+                                  name: {
+                                    description: "The name of the secret in the object's namespace to select from.",
+                                    minLength: 1,
+                                    type: 'string',
+                                  },
+                                },
+                                required: [
+                                  'key',
+                                  'name',
+                                ],
+                                type: 'object',
+                              },
+                              followRedirects: {
+                                description: 'FollowRedirects specifies whether the client should follow HTTP 3xx redirects.',
+                                type: 'boolean',
+                              },
+                              oauth2: {
+                                description: 'OAuth2 client credentials used to fetch a token for the targets.',
+                                properties: {
+                                  clientId: {
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
+                                    properties: {
+                                      configMap: {
+                                        description: 'ConfigMap containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key to select.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the ConfigMap or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                      secret: {
+                                        description: 'Secret containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the Secret or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                    },
+                                    type: 'object',
+                                  },
+                                  clientSecret: {
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
+                                    properties: {
+                                      key: {
+                                        description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                        type: 'string',
+                                      },
+                                      name: {
+                                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                        type: 'string',
+                                      },
+                                      optional: {
+                                        description: 'Specify whether the Secret or its key must be defined',
+                                        type: 'boolean',
+                                      },
+                                    },
+                                    required: [
+                                      'key',
+                                    ],
+                                    type: 'object',
+                                    'x-kubernetes-map-type': 'atomic',
+                                  },
+                                  endpointParams: {
+                                    additionalProperties: {
+                                      type: 'string',
+                                    },
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
+                                    type: 'object',
+                                  },
+                                  scopes: {
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
+                                    items: {
+                                      type: 'string',
+                                    },
+                                    type: 'array',
+                                  },
+                                  tokenUrl: {
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
+                                    minLength: 1,
+                                    type: 'string',
+                                  },
+                                },
+                                required: [
+                                  'clientId',
+                                  'clientSecret',
+                                  'tokenUrl',
+                                ],
+                                type: 'object',
+                              },
+                              proxyURL: {
+                                description: 'Optional proxy URL.',
+                                type: 'string',
+                              },
+                              tlsConfig: {
+                                description: 'TLS configuration for the client.',
+                                properties: {
+                                  ca: {
+                                    description: 'Certificate authority used when verifying server certificates.',
+                                    properties: {
+                                      configMap: {
+                                        description: 'ConfigMap containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key to select.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the ConfigMap or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                      secret: {
+                                        description: 'Secret containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the Secret or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                    },
+                                    type: 'object',
+                                  },
+                                  cert: {
+                                    description: 'Client certificate to present when doing client-authentication.',
+                                    properties: {
+                                      configMap: {
+                                        description: 'ConfigMap containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key to select.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the ConfigMap or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                      secret: {
+                                        description: 'Secret containing data to use for the targets.',
+                                        properties: {
+                                          key: {
+                                            description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                            type: 'string',
+                                          },
+                                          name: {
+                                            description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                            type: 'string',
+                                          },
+                                          optional: {
+                                            description: 'Specify whether the Secret or its key must be defined',
+                                            type: 'boolean',
+                                          },
+                                        },
+                                        required: [
+                                          'key',
+                                        ],
+                                        type: 'object',
+                                        'x-kubernetes-map-type': 'atomic',
+                                      },
+                                    },
+                                    type: 'object',
+                                  },
+                                  insecureSkipVerify: {
+                                    description: 'Disable target certificate validation.',
+                                    type: 'boolean',
+                                  },
+                                  keySecret: {
+                                    description: 'Secret containing the client key file for the targets.',
+                                    properties: {
+                                      key: {
+                                        description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                        type: 'string',
+                                      },
+                                      name: {
+                                        description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                        type: 'string',
+                                      },
+                                      optional: {
+                                        description: 'Specify whether the Secret or its key must be defined',
+                                        type: 'boolean',
+                                      },
+                                    },
+                                    required: [
+                                      'key',
+                                    ],
+                                    type: 'object',
+                                    'x-kubernetes-map-type': 'atomic',
+                                  },
+                                  serverName: {
+                                    description: 'Used to verify the hostname for the targets.',
+                                    type: 'string',
+                                  },
+                                },
+                                type: 'object',
+                              },
+                            },
+                            type: 'object',
+                          },
+                          sendResolved: {
+                            description: 'Whether to notify about resolved alerts.',
+                            type: 'boolean',
+                          },
+                          summary: {
+                            description: 'Message summary template. It requires Alertmanager >= 0.27.0.',
+                            type: 'string',
+                          },
+                          text: {
+                            description: 'Message body template.',
+                            type: 'string',
+                          },
+                          title: {
+                            description: 'Message title template.',
+                            type: 'string',
+                          },
+                          webhookUrl: {
+                            description: 'MSTeams webhook URL.',
+                            properties: {
+                              key: {
+                                description: 'The key of the secret to select from.  Must be a valid secret key.',
+                                type: 'string',
+                              },
+                              name: {
+                                description: 'Name of the referent. More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names TODO: Add other useful fields. apiVersion, kind, uid?',
+                                type: 'string',
+                              },
+                              optional: {
+                                description: 'Specify whether the Secret or its key must be defined',
+                                type: 'boolean',
+                              },
+                            },
+                            required: [
+                              'key',
+                            ],
+                            type: 'object',
+                            'x-kubernetes-map-type': 'atomic',
+                          },
+                        },
+                        required: [
+                          'webhookUrl',
+                        ],
+                        type: 'object',
+                      },
+                      type: 'array',
+                    },
                     name: {
                       description: 'Name of the receiver. Must be unique across all items from the list.',
                       minLength: 1,
@@ -861,7 +1266,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -883,7 +1288,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -935,7 +1340,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -985,7 +1390,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1010,18 +1415,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -1333,7 +1738,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1355,7 +1760,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1407,7 +1812,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -1457,7 +1862,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1482,18 +1887,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -1750,6 +2155,10 @@
                       items: {
                         description: 'PushoverConfig configures notifications via Pushover. See https://prometheus.io/docs/alerting/latest/configuration/#pushover_config',
                         properties: {
+                          device: {
+                            description: 'The name of a device to send the notification to',
+                            type: 'string',
+                          },
                           expire: {
                             description: 'How long your notification will continue to be retried for, unless the user acknowledges the notification.',
                             pattern: '^(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?$',
@@ -1798,7 +2207,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1820,7 +2229,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1872,7 +2281,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -1922,7 +2331,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -1947,18 +2356,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -2139,7 +2548,7 @@
                             type: 'string',
                           },
                           token: {
-                            description: "The secret's key that contains the registered application's API token, see https://pushover.net/apps. The secret needs to be in the same namespace as the AlertmanagerConfig object and accessible by the Prometheus Operator.",
+                            description: "The secret's key that contains the registered application's API token, see https://pushover.net/apps. The secret needs to be in the same namespace as the AlertmanagerConfig object and accessible by the Prometheus Operator. Either `token` or `tokenFile` is required.",
                             properties: {
                               key: {
                                 description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2157,6 +2566,10 @@
                               'name',
                             ],
                             type: 'object',
+                          },
+                          tokenFile: {
+                            description: "The token file that contains the registered application's API token, see https://pushover.net/apps. Either `token` or `tokenFile` is required. It requires Alertmanager >= v0.26.0.",
+                            type: 'string',
                           },
                           url: {
                             description: 'A supplementary URL shown alongside the message.',
@@ -2167,7 +2580,7 @@
                             type: 'string',
                           },
                           userKey: {
-                            description: "The secret's key that contains the recipient user's user key. The secret needs to be in the same namespace as the AlertmanagerConfig object and accessible by the Prometheus Operator.",
+                            description: "The secret's key that contains the recipient user's user key. The secret needs to be in the same namespace as the AlertmanagerConfig object and accessible by the Prometheus Operator. Either `userKey` or `userKeyFile` is required.",
                             properties: {
                               key: {
                                 description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2185,6 +2598,10 @@
                               'name',
                             ],
                             type: 'object',
+                          },
+                          userKeyFile: {
+                            description: "The user key file that contains the recipient user's user key. Either `userKey` or `userKeyFile` is required. It requires Alertmanager >= v0.26.0.",
+                            type: 'string',
                           },
                         },
                         type: 'object',
@@ -2352,7 +2769,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2374,7 +2791,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2426,7 +2843,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -2476,7 +2893,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2501,18 +2918,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -2770,7 +3187,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2792,7 +3209,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2844,7 +3261,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -2894,7 +3311,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -2919,18 +3336,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -3257,7 +3674,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3279,7 +3696,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3331,7 +3748,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -3381,7 +3798,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3406,18 +3823,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -3689,7 +4106,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3711,7 +4128,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3763,7 +4180,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -3813,7 +4230,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -3838,18 +4255,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -4078,7 +4495,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4100,7 +4517,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4152,7 +4569,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -4202,7 +4619,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4227,18 +4644,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -4458,7 +4875,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4480,7 +4897,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4532,7 +4949,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -4582,7 +4999,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4607,18 +5024,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -4887,7 +5304,7 @@
                                 description: 'BasicAuth for the client. This is mutually exclusive with Authorization. If both are defined, BasicAuth takes precedence.',
                                 properties: {
                                   password: {
-                                    description: 'The secret in the service monitor namespace that contains the password for authentication.',
+                                    description: '`password` specifies a key of a Secret containing the password for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4909,7 +5326,7 @@
                                     'x-kubernetes-map-type': 'atomic',
                                   },
                                   username: {
-                                    description: 'The secret in the service monitor namespace that contains the username for authentication.',
+                                    description: '`username` specifies a key of a Secret containing the username for authentication.',
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -4961,7 +5378,7 @@
                                 description: 'OAuth2 client credentials used to fetch a token for the targets.',
                                 properties: {
                                   clientId: {
-                                    description: 'The secret or configmap containing the OAuth2 client id',
+                                    description: "`clientId` specifies a key of a Secret or ConfigMap containing the OAuth2 client's ID.",
                                     properties: {
                                       configMap: {
                                         description: 'ConfigMap containing data to use for the targets.',
@@ -5011,7 +5428,7 @@
                                     type: 'object',
                                   },
                                   clientSecret: {
-                                    description: 'The secret containing the OAuth2 client secret',
+                                    description: "`clientSecret` specifies a key of a Secret containing the OAuth2 client's secret.",
                                     properties: {
                                       key: {
                                         description: 'The key of the secret to select from.  Must be a valid secret key.',
@@ -5036,18 +5453,18 @@
                                     additionalProperties: {
                                       type: 'string',
                                     },
-                                    description: 'Parameters to append to the token URL',
+                                    description: '`endpointParams` configures the HTTP parameters to append to the token URL.',
                                     type: 'object',
                                   },
                                   scopes: {
-                                    description: 'OAuth2 scopes used for the token request',
+                                    description: '`scopes` defines the OAuth2 scopes used for the token request.',
                                     items: {
                                       type: 'string',
                                     },
                                     type: 'array',
                                   },
                                   tokenUrl: {
-                                    description: 'The URL to fetch the token from',
+                                    description: '`tokenURL` configures the URL to fetch the token from.',
                                     minLength: 1,
                                     type: 'string',
                                   },
@@ -5361,7 +5778,7 @@
                             description: 'Months is a list of MonthRange',
                             items: {
                               description: "MonthRange is an inclusive range of months of the year beginning in January Months can be specified by name (e.g 'January') by numerical month (e.g '1') or as an inclusive range (e.g 'January:March', '1:3', '1:March')",
-                              pattern: '^((?i)january|february|march|april|may|june|july|august|september|october|november|december|[1-12])(?:((:((?i)january|february|march|april|may|june|july|august|september|october|november|december|[1-12]))$)|$)',
+                              pattern: '^((?i)january|february|march|april|may|june|july|august|september|october|november|december|1[0-2]|[1-9])(?:((:((?i)january|february|march|april|may|june|july|august|september|october|november|december|1[0-2]|[1-9]))$)|$)',
                               type: 'string',
                             },
                             type: 'array',

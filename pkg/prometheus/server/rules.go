@@ -19,12 +19,10 @@ import (
 	"fmt"
 	"reflect"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
-	"github.com/pkg/errors"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
@@ -69,14 +67,14 @@ func (c *Operator) createOrUpdateRuleConfigMaps(ctx context.Context, p *monitori
 	logger := log.With(c.logger, "prometheus", p.Name, "namespace", p.Namespace)
 	promVersion := operator.StringValOrDefault(p.GetCommonPrometheusFields().Version, operator.DefaultPrometheusVersion)
 
-	promRuleSelector, err := operator.NewPrometheusRuleSelector(operator.PrometheusFormat, promVersion, p.Spec.RuleSelector, nsLabeler, c.ruleInfs, logger)
+	promRuleSelector, err := operator.NewPrometheusRuleSelector(operator.PrometheusFormat, promVersion, p.Spec.RuleSelector, nsLabeler, c.ruleInfs, c.eventRecorder, logger)
 	if err != nil {
-		return nil, errors.Wrap(err, "initializing PrometheusRules failed")
+		return nil, fmt.Errorf("initializing PrometheusRules failed: %w", err)
 	}
 
 	newRules, rejected, err := promRuleSelector.Select(namespaces)
 	if err != nil {
-		return nil, errors.Wrap(err, "selecting PrometheusRules failed")
+		return nil, fmt.Errorf("selecting PrometheusRules failed: %w", err)
 	}
 
 	if pKey, ok := c.accessor.MetaNamespaceKey(p); ok {
@@ -111,9 +109,14 @@ func (c *Operator) createOrUpdateRuleConfigMaps(ctx context.Context, p *monitori
 		return currentConfigMapNames, nil
 	}
 
-	newConfigMaps, err := makeRulesConfigMaps(p, newRules)
+	newConfigMaps, err := makeRulesConfigMaps(
+		p,
+		newRules,
+		operator.WithAnnotations(c.config.Annotations),
+		operator.WithLabels(c.config.Labels),
+	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to make rules ConfigMaps")
+		return nil, fmt.Errorf("failed to make rules ConfigMaps: %w", err)
 	}
 
 	newConfigMapNames := []string{}
@@ -130,7 +133,7 @@ func (c *Operator) createOrUpdateRuleConfigMaps(ctx context.Context, p *monitori
 		for _, cm := range newConfigMaps {
 			_, err = cClient.Create(ctx, &cm, metav1.CreateOptions{})
 			if err != nil {
-				return nil, errors.Wrapf(err, "failed to create ConfigMap '%v'", cm.Name)
+				return nil, fmt.Errorf("failed to create ConfigMap '%v': %w", cm.Name, err)
 			}
 		}
 		return newConfigMapNames, nil
@@ -141,7 +144,7 @@ func (c *Operator) createOrUpdateRuleConfigMaps(ctx context.Context, p *monitori
 	for _, cm := range currentConfigMaps {
 		err := cClient.Delete(ctx, cm.Name, metav1.DeleteOptions{})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to delete current ConfigMap '%v'", cm.Name)
+			return nil, fmt.Errorf("failed to delete current ConfigMap '%v': %w", cm.Name, err)
 		}
 	}
 
@@ -153,7 +156,7 @@ func (c *Operator) createOrUpdateRuleConfigMaps(ctx context.Context, p *monitori
 	for _, cm := range newConfigMaps {
 		_, err = cClient.Create(ctx, &cm, metav1.CreateOptions{})
 		if err != nil {
-			return nil, errors.Wrapf(err, "failed to create new ConfigMap '%v'", cm.Name)
+			return nil, fmt.Errorf("failed to create new ConfigMap '%v': %w", cm.Name, err)
 		}
 	}
 
@@ -173,7 +176,7 @@ func (c *Operator) selectRuleNamespaces(p *monitoringv1.Prometheus) ([]string, e
 	} else {
 		ruleNamespaceSelector, err := metav1.LabelSelectorAsSelector(p.Spec.RuleNamespaceSelector)
 		if err != nil {
-			return namespaces, errors.Wrap(err, "convert rule namespace label selector to selector")
+			return namespaces, fmt.Errorf("convert rule namespace label selector to selector: %w", err)
 		}
 
 		namespaces, err = operator.ListMatchingNamespaces(ruleNamespaceSelector, c.nsMonInf)
@@ -200,11 +203,11 @@ func (c *Operator) selectRuleNamespaces(p *monitoringv1.Prometheus) ([]string, e
 // future this can be replaced by a more sophisticated algorithm, but for now
 // simplicity should be sufficient.
 // [1] https://en.wikipedia.org/wiki/Bin_packing_problem#First-fit_algorithm
-func makeRulesConfigMaps(p *monitoringv1.Prometheus, ruleFiles map[string]string) ([]v1.ConfigMap, error) {
+func makeRulesConfigMaps(p *monitoringv1.Prometheus, ruleFiles map[string]string, opts ...operator.ObjectOption) ([]v1.ConfigMap, error) {
 	//check if none of the rule files is too large for a single ConfigMap
 	for filename, file := range ruleFiles {
 		if len(file) > maxConfigMapDataSize {
-			return nil, errors.Errorf(
+			return nil, fmt.Errorf(
 				"rule file '%v' is too large for a single Kubernetes ConfigMap",
 				filename,
 			)
@@ -235,8 +238,21 @@ func makeRulesConfigMaps(p *monitoringv1.Prometheus, ruleFiles map[string]string
 
 	ruleFileConfigMaps := []v1.ConfigMap{}
 	for i, bucket := range buckets {
-		cm := makeRulesConfigMap(p, bucket)
-		cm.Name = cm.Name + "-" + strconv.Itoa(i)
+		cm := v1.ConfigMap{
+			Data: bucket,
+		}
+
+		operator.UpdateObject(
+			&cm,
+			opts...,
+		)
+		operator.UpdateObject(
+			&cm,
+			operator.WithLabels(map[string]string{prompkg.LabelPrometheusName: p.Name}),
+			operator.WithName(fmt.Sprintf("prometheus-%s-rulefiles-%d", p.Name, i)),
+			operator.WithManagingOwner(p),
+		)
+
 		ruleFileConfigMaps = append(ruleFileConfigMaps, cm)
 	}
 
@@ -250,35 +266,4 @@ func bucketSize(bucket map[string]string) int {
 	}
 
 	return totalSize
-}
-
-func makeRulesConfigMap(p *monitoringv1.Prometheus, ruleFiles map[string]string) v1.ConfigMap {
-	boolTrue := true
-
-	labels := map[string]string{prompkg.LabelPrometheusName: p.Name}
-	for k, v := range prompkg.ManagedByOperatorLabels {
-		labels[k] = v
-	}
-
-	return v1.ConfigMap{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:   prometheusRuleConfigMapName(p.Name),
-			Labels: labels,
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         p.APIVersion,
-					BlockOwnerDeletion: &boolTrue,
-					Controller:         &boolTrue,
-					Kind:               p.Kind,
-					Name:               p.Name,
-					UID:                p.UID,
-				},
-			},
-		},
-		Data: ruleFiles,
-	}
-}
-
-func prometheusRuleConfigMapName(prometheusName string) string {
-	return "prometheus-" + prometheusName + "-rulefiles"
 }
