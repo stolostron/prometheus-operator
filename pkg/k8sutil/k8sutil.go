@@ -37,7 +37,6 @@ import (
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/apimachinery/pkg/util/validation"
 	"k8s.io/client-go/discovery"
-	"k8s.io/client-go/kubernetes"
 	clientappsv1 "k8s.io/client-go/kubernetes/typed/apps/v1"
 	clientauthv1 "k8s.io/client-go/kubernetes/typed/authorization/v1"
 	clientv1 "k8s.io/client-go/kubernetes/typed/core/v1"

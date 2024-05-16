@@ -150,25 +150,3 @@ func (c *FakePrometheusRules) Apply(ctx context.Context, prometheusRule *monitor
 	}
 	return obj.(*v1.PrometheusRule), err
 }
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied prometheusRule.
-func (c *FakePrometheusRules) Apply(ctx context.Context, prometheusRule *applyconfigurationmonitoringv1.PrometheusRuleApplyConfiguration, opts v1.ApplyOptions) (result *monitoringv1.PrometheusRule, err error) {
-	if prometheusRule == nil {
-		return nil, fmt.Errorf("prometheusRule provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(prometheusRule)
-	if err != nil {
-		return nil, err
-	}
-	name := prometheusRule.Name
-	if name == nil {
-		return nil, fmt.Errorf("prometheusRule.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(prometheusrulesResource, c.ns, *name, types.ApplyPatchType, data), &monitoringv1.PrometheusRule{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*monitoringv1.PrometheusRule), err
-}

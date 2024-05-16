@@ -150,25 +150,3 @@ func (c *FakeProbes) Apply(ctx context.Context, probe *monitoringv1.ProbeApplyCo
 	}
 	return obj.(*v1.Probe), err
 }
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied probe.
-func (c *FakeProbes) Apply(ctx context.Context, probe *applyconfigurationmonitoringv1.ProbeApplyConfiguration, opts v1.ApplyOptions) (result *monitoringv1.Probe, err error) {
-	if probe == nil {
-		return nil, fmt.Errorf("probe provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(probe)
-	if err != nil {
-		return nil, err
-	}
-	name := probe.Name
-	if name == nil {
-		return nil, fmt.Errorf("probe.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(probesResource, c.ns, *name, types.ApplyPatchType, data), &monitoringv1.Probe{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*monitoringv1.Probe), err
-}

@@ -72,15 +72,6 @@ func (f *Framework) CreateOrUpdateCRD(ctx context.Context, crd *v1.CustomResourc
 		if err != nil {
 			return fmt.Errorf("update CRD %s: %w", crd.Spec.Names.Kind, err)
 		}
-	} else {
-		// must set this field from existing CRD to prevent update fail
-		crd.ObjectMeta.ResourceVersion = c.ObjectMeta.ResourceVersion
-
-		// CRD already exists -> Update
-		_, err := f.APIServerClient.ApiextensionsV1().CustomResourceDefinitions().Update(ctx, crd, metav1.UpdateOptions{})
-		if err != nil {
-			return errors.Wrapf(err, "update CRD: %s", crd.Spec.Names.Kind)
-		}
 	}
 	return nil
 }

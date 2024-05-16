@@ -591,7 +591,7 @@ func (c *Operator) sync(ctx context.Context, key string) error {
 	}
 
 	if err := c.createOrUpdateWebConfigSecret(ctx, am); err != nil {
-		return errors.Wrap(err, "synchronizing web config secret failed")
+		return fmt.Errorf("synchronizing web config secret failed")
 	}
 
 	// Create governing service if it doesn't exist.
@@ -735,78 +735,6 @@ func (c *Operator) UpdateStatus(ctx context.Context, key string) error {
 
 	if _, err = c.mclient.MonitoringV1().Alertmanagers(a.Namespace).ApplyStatus(ctx, ApplyConfigurationFromAlertmanager(a), metav1.ApplyOptions{FieldManager: operator.PrometheusOperatorFieldManager, Force: true}); err != nil {
 		return fmt.Errorf("failed to apply status subresource: %w", err)
-	}
-
-	return nil
-}
-
-// getAlertmanagerFromKey returns a copy of the Alertmanager object identified by key.
-// If the object is not found, it returns a nil pointer.
-func (c *Operator) getAlertmanagerFromKey(key string) (*monitoringv1.Alertmanager, error) {
-	obj, err := c.alrtInfs.Get(key)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			level.Info(c.logger).Log("msg", "Alertmanager not found", "key", key)
-			return nil, nil
-		}
-		return nil, errors.Wrap(err, "failed to retrieve Alertmanager from informer")
-	}
-
-	return obj.(*monitoringv1.Alertmanager).DeepCopy(), nil
-}
-
-// getStatefulSetFromAlertmanagerKey returns a copy of the StatefulSet object
-// corresponding to the Alertmanager object identified by key.
-// If the object is not found, it returns a nil pointer without error.
-func (c *Operator) getStatefulSetFromAlertmanagerKey(key string) (*appsv1.StatefulSet, error) {
-	ssetName := alertmanagerKeyToStatefulSetKey(key)
-
-	obj, err := c.ssetInfs.Get(ssetName)
-	if err != nil {
-		if apierrors.IsNotFound(err) {
-			level.Info(c.logger).Log("msg", "StatefulSet not found", "key", ssetName)
-			return nil, nil
-		}
-		return nil, errors.Wrap(err, "failed to retrieve StatefulSet from informer")
-	}
-
-	return obj.(*appsv1.StatefulSet).DeepCopy(), nil
-}
-
-// UpdateStatus updates the status subresource of the object identified by the given
-// key.
-// UpdateStatus implements the operator.Syncer interface.
-func (c *Operator) UpdateStatus(ctx context.Context, key string) error {
-	a, err := c.getAlertmanagerFromKey(key)
-	if err != nil {
-		return err
-	}
-
-	if a == nil || c.rr.DeletionInProgress(a) {
-		return nil
-	}
-
-	sset, err := c.getStatefulSetFromAlertmanagerKey(key)
-	if err != nil {
-		return errors.Wrap(err, "failed to get StatefulSet")
-	}
-
-	if sset != nil && c.rr.DeletionInProgress(sset) {
-		return nil
-	}
-
-	stsReporter, err := operator.NewStatefulSetReporter(ctx, c.kclient, sset)
-	if err != nil {
-		return errors.Wrap(err, "failed to retrieve statefulset state")
-	}
-
-	availableCondition := stsReporter.Update(a)
-	reconciledCondition := c.reconciliations.GetCondition(key, a.Generation)
-	a.Status.Conditions = operator.UpdateConditions(a.Status.Conditions, availableCondition, reconciledCondition)
-	a.Status.Paused = a.Spec.Paused
-
-	if _, err = c.mclient.MonitoringV1().Alertmanagers(a.Namespace).UpdateStatus(ctx, a, metav1.UpdateOptions{}); err != nil {
-		return errors.Wrap(err, "failed to update status subresource")
 	}
 
 	return nil

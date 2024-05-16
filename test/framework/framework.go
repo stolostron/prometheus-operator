@@ -113,11 +113,6 @@ func New(kubeconfig, opImage, exampleDir, resourcesDir string, operatorVersion s
 		return nil, fmt.Errorf("creating v1beta1 monitoring client failed: %w", err)
 	}
 
-	mClientv1beta1, err := v1beta1monitoringclient.NewForConfig(config)
-	if err != nil {
-		return nil, errors.Wrap(err, "creating v1beta1 monitoring client failed")
-	}
-
 	f := &Framework{
 		RestConfig:        config,
 		MasterHost:        config.Host,

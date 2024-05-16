@@ -108,19 +108,19 @@ func validateReceivers(receivers []monitoringv1alpha1.Receiver) (map[string]stru
 		}
 
 		if err := validateSnsConfigs(receiver.SNSConfigs); err != nil {
-			return nil, errors.Wrapf(err, "failed to validate 'snsConfig' - receiver %s", receiver.Name)
+			return nil, fmt.Errorf("failed to validate 'snsConfig' - receiver %s", receiver.Name)
 		}
 
 		if err := validateTelegramConfigs(receiver.TelegramConfigs); err != nil {
-			return nil, errors.Wrapf(err, "failed to validate 'telegramConfig' - receiver %s", receiver.Name)
+			return nil, fmt.Errorf("failed to validate 'telegramConfig' - receiver %s", receiver.Name)
 		}
 
 		if err := validateWebexConfigs(receiver.WebexConfigs); err != nil {
-			return nil, errors.Wrapf(err, "failed to validate 'webexConfig' - receiver %s", receiver.Name)
+			return nil, fmt.Errorf("failed to validate 'webexConfig' - receiver %s", receiver.Name)
 		}
 
 		if err := validateDiscordConfigs(receiver.DiscordConfigs); err != nil {
-			return nil, errors.Wrapf(err, "failed to validate 'discordConfig' - receiver %s", receiver.Name)
+			return nil, fmt.Errorf("failed to validate 'discordConfig' - receiver %s", receiver.Name)
 		}
 	}
 
@@ -365,54 +365,6 @@ func validateMSTeamsConfigs(configs []monitoringv1alpha1.MSTeamsConfig) error {
 	return nil
 }
 
-func validateSnsConfigs(configs []monitoringv1alpha1.SNSConfig) error {
-	for _, config := range configs {
-		if (config.TargetARN == "") != (config.TopicARN == "") != (config.PhoneNumber == "") {
-			return fmt.Errorf("must provide either a Target ARN, Topic ARN, or Phone Number for SNS config")
-		}
-
-		if err := config.HTTPConfig.Validate(); err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func validateTelegramConfigs(configs []monitoringv1alpha1.TelegramConfig) error {
-	for _, config := range configs {
-
-		if config.BotToken == nil && config.BotTokenFile == nil {
-			return fmt.Errorf("mandatory field botToken or botTokenfile is empty")
-		}
-
-		if config.ChatID == 0 {
-			return fmt.Errorf("mandatory field %q is empty", "chatID")
-		}
-
-		if err := config.HTTPConfig.Validate(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func validateWebexConfigs(configs []monitoringv1alpha1.WebexConfig) error {
-	for _, config := range configs {
-		if *config.APIURL != "" {
-			if _, err := validation.ValidateURL(string(*config.APIURL)); err != nil {
-				return errors.Wrap(err, "invalid 'apiURL'")
-			}
-		}
-
-		if err := config.HTTPConfig.Validate(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // validateAlertManagerRoutes verifies that the given route and all its children are semantically valid.
 // because of the self-referential issues mentioned in https://github.com/kubernetes/kubernetes/issues/62872
 // it is not currently possible to apply OpenAPI validation to a v1alpha1.Route.
@@ -458,7 +410,7 @@ func validateAlertManagerRoutes(r *monitoringv1alpha1.Route, receivers, muteTime
 
 	for _, namedActiveTimeInterval := range r.ActiveTimeIntervals {
 		if _, found := muteTimeIntervals[namedActiveTimeInterval]; !found {
-			return errors.Errorf("time interval %q not found", namedActiveTimeInterval)
+			return fmt.Errorf("time interval %q not found", namedActiveTimeInterval)
 		}
 	}
 

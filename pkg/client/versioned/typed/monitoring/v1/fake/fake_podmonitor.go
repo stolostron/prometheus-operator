@@ -150,25 +150,3 @@ func (c *FakePodMonitors) Apply(ctx context.Context, podMonitor *monitoringv1.Po
 	}
 	return obj.(*v1.PodMonitor), err
 }
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied podMonitor.
-func (c *FakePodMonitors) Apply(ctx context.Context, podMonitor *applyconfigurationmonitoringv1.PodMonitorApplyConfiguration, opts v1.ApplyOptions) (result *monitoringv1.PodMonitor, err error) {
-	if podMonitor == nil {
-		return nil, fmt.Errorf("podMonitor provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(podMonitor)
-	if err != nil {
-		return nil, err
-	}
-	name := podMonitor.Name
-	if name == nil {
-		return nil, fmt.Errorf("podMonitor.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(podmonitorsResource, c.ns, *name, types.ApplyPatchType, data), &monitoringv1.PodMonitor{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*monitoringv1.PodMonitor), err
-}

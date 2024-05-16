@@ -17,6 +17,7 @@ require (
 	github.com/kylelemons/godebug v1.1.0
 	github.com/mitchellh/hashstructure v1.1.0
 	github.com/oklog/run v1.1.0
+	github.com/pkg/errors v0.9.1
 	github.com/prometheus-community/prom-label-proxy v0.8.1
 	github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring v0.73.2
 	github.com/prometheus-operator/prometheus-operator/pkg/client v0.73.2
@@ -53,11 +54,9 @@ require (
 	github.com/go-openapi/swag v0.23.0 // indirect
 	github.com/golang-jwt/jwt/v5 v5.2.0 // indirect
 	github.com/golang/groupcache v0.0.0-20210331224755-41bb18bfe9da // indirect
-	github.com/google/gnostic-models v0.6.8 // indirect
 	github.com/gorilla/websocket v1.5.0 // indirect
 	github.com/mitchellh/go-ps v1.0.0 // indirect
 	github.com/mxk/go-flowrate v0.0.0-20140419014527-cca7078d478f // indirect
-	github.com/pkg/errors v0.9.1 // indirect
 )
 
 require (

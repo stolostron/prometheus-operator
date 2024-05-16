@@ -254,15 +254,7 @@ func (f *Framework) PatchAlertmanagerAndWaitUntilReady(ctx context.Context, name
 		return nil, fmt.Errorf("failed to update Alertmanager: %v", err)
 	}
 
-func (f *Framework) ScaleAlertmanagerAndWaitUntilReady(ctx context.Context, name, ns string, replicas int32) (*monitoringv1.Alertmanager, error) {
-	return f.PatchAlertmanagerAndWaitUntilReady(
-		ctx,
-		name,
-		ns,
-		monitoringv1.AlertmanagerSpec{
-			Replicas: ptr.To(replicas),
-		},
-	)
+	return a, nil
 }
 
 func (f *Framework) PatchAlertmanager(ctx context.Context, name, ns string, spec monitoringv1.AlertmanagerSpec) (*monitoringv1.Alertmanager, error) {

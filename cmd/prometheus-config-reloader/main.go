@@ -173,9 +173,6 @@ func main() {
 			&opts,
 		)
 
-		client := createHTTPClient(reloadTimeout)
-		rel.SetHttpClient(client)
-
 		g.Add(func() error {
 			return rel.Watch(ctx)
 		}, func(error) {
