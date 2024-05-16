@@ -15,6 +15,7 @@
 package prometheus
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"reflect"
@@ -25,30 +26,31 @@ import (
 	"github.com/go-kit/log"
 	"github.com/go-kit/log/level"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/client-go/kubernetes/fake"
 	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	"github.com/prometheus-operator/prometheus-operator/pkg/assets"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 	prompkg "github.com/prometheus-operator/prometheus-operator/pkg/prometheus"
 )
 
-var (
-	defaultTestConfig = &operator.Config{
-		LocalHost:                  "localhost",
-		ReloaderConfig:             operator.DefaultReloaderTestConfig.ReloaderConfig,
-		PrometheusDefaultBaseImage: operator.DefaultPrometheusBaseImage,
-		ThanosDefaultBaseImage:     operator.DefaultThanosBaseImage,
-	}
-)
+var defaultTestConfig = &prompkg.Config{
+	LocalHost:                  "localhost",
+	ReloaderConfig:             operator.DefaultReloaderTestConfig.ReloaderConfig,
+	PrometheusDefaultBaseImage: operator.DefaultPrometheusBaseImage,
+	ThanosDefaultBaseImage:     operator.DefaultThanosBaseImage,
+}
 
 func newLogger() log.Logger {
-	return level.NewFilter(log.NewLogfmtLogger(os.Stderr), level.AllowWarn())
+	return level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowWarn())
 }
 
 func makeStatefulSetFromPrometheus(p monitoringv1.Prometheus) (*appsv1.StatefulSet, error) {
@@ -62,11 +64,13 @@ func makeStatefulSetFromPrometheus(p monitoringv1.Prometheus) (*appsv1.StatefulS
 	return makeStatefulSet(
 		"test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -77,7 +81,7 @@ func makeStatefulSetFromPrometheus(p monitoringv1.Prometheus) (*appsv1.StatefulS
 		nil,
 		"",
 		0,
-		nil)
+		&operator.ShardedSecret{})
 }
 
 func TestStatefulSetLabelingAndAnnotations(t *testing.T) {
@@ -101,6 +105,7 @@ func TestStatefulSetLabelingAndAnnotations(t *testing.T) {
 		"operator.prometheus.io/name":  "",
 		"operator.prometheus.io/shard": "0",
 		"operator.prometheus.io/mode":  "server",
+		"managed-by":                   "prometheus-operator",
 	}
 
 	expectedPodLabels := map[string]string{
@@ -165,6 +170,7 @@ func TestPodLabelsAnnotations(t *testing.T) {
 		t.Fatal("Pod annotations are not properly propagated")
 	}
 }
+
 func TestPodLabelsShouldNotBeSelectorLabels(t *testing.T) {
 	labels := map[string]string{
 		"testlabel": "testvalue",
@@ -225,7 +231,6 @@ func TestStatefulSetPVC(t *testing.T) {
 	if !reflect.DeepEqual(*pvc.Spec.StorageClassName, *ssetPvc.Spec.StorageClassName) {
 		t.Fatal("Error adding PVC Spec to StatefulSetSpec")
 	}
-
 }
 
 func TestStatefulSetEmptyDir(t *testing.T) {
@@ -440,14 +445,29 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 	cg, err := prompkg.NewConfigGenerator(logger, &p, false)
 	require.NoError(t, err)
 
+	shardedSecret, err := operator.ReconcileShardedSecretForTLSAssets(
+		context.Background(),
+		&assets.Store{},
+		fake.NewSimpleClientset(),
+		&v1.Secret{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      prompkg.TLSAssetsSecretName(&p),
+				Namespace: "test",
+			},
+		},
+	)
+	require.NoError(t, err)
+
 	sset, err := makeStatefulSet(
 		"volume-init-test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -458,7 +478,7 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 		[]string{"rules-configmap-one"},
 		"",
 		0,
-		[]string{prompkg.TLSAssetsSecretName(&p) + "-0"})
+		shardedSecret)
 	require.NoError(t, err)
 
 	if !reflect.DeepEqual(expected.Spec.Template.Spec.Volumes, sset.Spec.Template.Spec.Volumes) {
@@ -671,6 +691,7 @@ func TestListenTLS(t *testing.T) {
 
 	expectedArgsConfigReloader := []string{
 		"--listen-address=:8080",
+		"--web-config-file=/etc/prometheus/web_config/web-config.yaml",
 		"--reload-url=https://localhost:9090/-/reload",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
@@ -874,7 +895,7 @@ func TestTagAndShaAndVersion(t *testing.T) {
 }
 
 func TestPrometheusDefaultBaseImageFlag(t *testing.T) {
-	operatorConfig := &operator.Config{
+	operatorConfig := &prompkg.Config{
 		ReloaderConfig:             defaultTestConfig.ReloaderConfig,
 		PrometheusDefaultBaseImage: "nondefaultuseflag/quay.io/prometheus/prometheus",
 		ThanosDefaultBaseImage:     "nondefaultuseflag/quay.io/thanos/thanos",
@@ -900,11 +921,13 @@ func TestPrometheusDefaultBaseImageFlag(t *testing.T) {
 	sset, err := makeStatefulSet(
 		"test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -915,7 +938,7 @@ func TestPrometheusDefaultBaseImageFlag(t *testing.T) {
 		nil,
 		"",
 		0,
-		nil)
+		&operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	image := sset.Spec.Template.Spec.Containers[0].Image
@@ -926,7 +949,7 @@ func TestPrometheusDefaultBaseImageFlag(t *testing.T) {
 }
 
 func TestThanosDefaultBaseImageFlag(t *testing.T) {
-	thanosBaseImageConfig := &operator.Config{
+	thanosBaseImageConfig := &prompkg.Config{
 		ReloaderConfig:             defaultTestConfig.ReloaderConfig,
 		PrometheusDefaultBaseImage: "nondefaultuseflag/quay.io/prometheus/prometheus",
 		ThanosDefaultBaseImage:     "nondefaultuseflag/quay.io/thanos/thanos",
@@ -954,11 +977,13 @@ func TestThanosDefaultBaseImageFlag(t *testing.T) {
 	sset, err := makeStatefulSet(
 		"test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -969,7 +994,7 @@ func TestThanosDefaultBaseImageFlag(t *testing.T) {
 		nil,
 		"",
 		0,
-		nil)
+		&operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	image := sset.Spec.Template.Spec.Containers[2].Image
@@ -1246,7 +1271,6 @@ func TestThanosObjectStorageFile(t *testing.T) {
 					}
 				}
 			}
-
 		}
 		if !containsArg {
 			t.Fatalf("Prometheus is missing expected argument: %s", expectedArg)
@@ -1534,7 +1558,7 @@ func TestRetentionAndRetentionSize(t *testing.T) {
 }
 
 func TestReplicasConfigurationWithSharding(t *testing.T) {
-	testConfig := &operator.Config{
+	testConfig := &prompkg.Config{
 		ReloaderConfig:             defaultTestConfig.ReloaderConfig,
 		PrometheusDefaultBaseImage: "quay.io/prometheus/prometheus",
 		ThanosDefaultBaseImage:     "quay.io/thanos/thanos:v0.7.0",
@@ -1557,11 +1581,13 @@ func TestReplicasConfigurationWithSharding(t *testing.T) {
 	sset, err := makeStatefulSet(
 		"test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -1572,7 +1598,7 @@ func TestReplicasConfigurationWithSharding(t *testing.T) {
 		nil,
 		"",
 		1,
-		nil)
+		&operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	if *sset.Spec.Replicas != int32(2) {
@@ -1596,7 +1622,7 @@ func TestReplicasConfigurationWithSharding(t *testing.T) {
 
 func TestSidecarResources(t *testing.T) {
 	operator.TestSidecarsResources(t, func(reloaderConfig operator.ContainerConfig) *appsv1.StatefulSet {
-		testConfig := &operator.Config{
+		testConfig := &prompkg.Config{
 			ReloaderConfig:             reloaderConfig,
 			PrometheusDefaultBaseImage: defaultTestConfig.PrometheusDefaultBaseImage,
 			ThanosDefaultBaseImage:     defaultTestConfig.ThanosDefaultBaseImage,
@@ -1612,11 +1638,13 @@ func TestSidecarResources(t *testing.T) {
 		sset, err := makeStatefulSet(
 			"test",
 			&p,
+			//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 			p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 			p.Spec.Retention,
 			p.Spec.RetentionSize,
 			p.Spec.Rules,
 			p.Spec.Query,
+			//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 			p.Spec.AllowOverlappingBlocks,
 			p.Spec.EnableAdminAPI,
 			p.Spec.QueryLogFile,
@@ -1627,11 +1655,10 @@ func TestSidecarResources(t *testing.T) {
 			nil,
 			"",
 			0,
-			nil)
+			&operator.ShardedSecret{})
 		require.NoError(t, err)
 		return sset
 	})
-
 }
 
 func TestAdditionalContainers(t *testing.T) {
@@ -2016,11 +2043,13 @@ func TestConfigReloader(t *testing.T) {
 	sset, err := makeStatefulSet(
 		"test",
 		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
 		p.Spec.Retention,
 		p.Spec.RetentionSize,
 		p.Spec.Rules,
 		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
 		p.Spec.AllowOverlappingBlocks,
 		p.Spec.EnableAdminAPI,
 		p.Spec.QueryLogFile,
@@ -2031,7 +2060,7 @@ func TestConfigReloader(t *testing.T) {
 		nil,
 		"",
 		int32(expectedShardNum),
-		nil)
+		&operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	expectedArgsConfigReloader := []string{
@@ -2069,6 +2098,85 @@ func TestConfigReloader(t *testing.T) {
 			for _, env := range c.Env {
 				if env.Name == "SHARD" && !reflect.DeepEqual(env.Value, strconv.Itoa(expectedShardNum)) {
 					t.Fatalf("expectd shard value is %s, but found %s", strconv.Itoa(expectedShardNum), env.Value)
+				}
+			}
+		}
+	}
+}
+
+func TestConfigReloaderWithSignal(t *testing.T) {
+	expectedShardNum := 0
+	logger := newLogger()
+	p := monitoringv1.Prometheus{
+		Spec: monitoringv1.PrometheusSpec{
+			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+				ReloadStrategy: func(r monitoringv1.ReloadStrategyType) *monitoringv1.ReloadStrategyType { return &r }(monitoringv1.ProcessSignalReloadStrategyType),
+			},
+		},
+	}
+
+	cg, err := prompkg.NewConfigGenerator(logger, &p, false)
+	require.NoError(t, err)
+
+	sset, err := makeStatefulSet(
+		"test",
+		&p,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
+		p.Spec.BaseImage, p.Spec.Tag, p.Spec.SHA,
+		p.Spec.Retention,
+		p.Spec.RetentionSize,
+		p.Spec.Rules,
+		p.Spec.Query,
+		//nolint:staticcheck // Ignore SA1019 this field is marked as deprecated.
+		p.Spec.AllowOverlappingBlocks,
+		p.Spec.EnableAdminAPI,
+		p.Spec.QueryLogFile,
+		p.Spec.Thanos,
+		p.Spec.DisableCompaction,
+		defaultTestConfig,
+		cg,
+		nil,
+		"",
+		int32(expectedShardNum),
+		&operator.ShardedSecret{})
+	require.NoError(t, err)
+
+	expectedArgsConfigReloader := []string{
+		"--listen-address=:8080",
+		"--reload-method=signal",
+		"--runtimeinfo-url=http://localhost:9090/api/v1/status/runtimeinfo",
+		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
+		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
+	}
+
+	for _, c := range sset.Spec.Template.Spec.Containers {
+		switch c.Name {
+		case "config-reloader":
+			require.Equal(t, expectedArgsConfigReloader, c.Args)
+			for _, env := range c.Env {
+				if env.Name == "SHARD" {
+					require.Equal(t, strconv.Itoa(expectedShardNum), env.Value)
+				}
+			}
+
+		case "prometheus":
+			require.NotContains(t, c.Args, "--web.enable-lifecycle")
+		}
+	}
+
+	expectedArgsInitConfigReloader := []string{
+		"--watch-interval=0",
+		"--listen-address=:8080",
+		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
+		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
+	}
+
+	for _, c := range sset.Spec.Template.Spec.InitContainers {
+		if c.Name == "init-config-reloader" {
+			require.Equal(t, expectedArgsInitConfigReloader, c.Args)
+			for _, env := range c.Env {
+				if env.Name == "SHARD" {
+					require.Equal(t, strconv.Itoa(expectedShardNum), env.Value)
 				}
 			}
 		}
@@ -2457,7 +2565,7 @@ func TestPrometheusAdditionalArgsDuplicate(t *testing.T) {
 			},
 		},
 	})
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if !strings.Contains(err.Error(), expectedErrorMsg) {
 		t.Fatalf("expected the following text to be present in the error msg: %s", expectedErrorMsg)
@@ -2489,7 +2597,7 @@ func TestPrometheusAdditionalBinaryArgsDuplicate(t *testing.T) {
 			},
 		},
 	})
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if !strings.Contains(err.Error(), expectedErrorMsg) {
 		t.Fatalf("expected the following text to be present in the error msg: %s", expectedErrorMsg)
@@ -2524,7 +2632,7 @@ func TestPrometheusAdditionalNoPrefixArgsDuplicate(t *testing.T) {
 			},
 		},
 	})
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if !strings.Contains(err.Error(), expectedErrorMsg) {
 		t.Fatalf("expected the following text to be present in the error msg: %s", expectedErrorMsg)
@@ -2535,10 +2643,10 @@ func TestThanosAdditionalArgsNoError(t *testing.T) {
 	expectedThanosArgs := []string{
 		"sidecar",
 		"--prometheus.url=http://localhost:9090/",
-		`--prometheus.http-client={"tls_config": {"insecure_skip_verify":true}}`,
 		"--grpc-address=:10901",
 		"--http-address=:10902",
 		"--log.level=info",
+		`--prometheus.http-client={"tls_config": {"insecure_skip_verify":true}}`,
 		"--reloader.watch-interval=5m",
 	}
 
@@ -2601,7 +2709,7 @@ func TestThanosAdditionalArgsDuplicate(t *testing.T) {
 			},
 		},
 	})
-	require.NotNil(t, err)
+	require.Error(t, err)
 
 	if !strings.Contains(err.Error(), expectedErrorMsg) {
 		t.Fatalf("expected the following text to be present in the error msg: %s", expectedErrorMsg)
@@ -2804,5 +2912,248 @@ func TestPodHostNetworkConfig(t *testing.T) {
 
 	if sset.Spec.Template.Spec.DNSPolicy != v1.DNSClusterFirstWithHostNet {
 		t.Fatalf("expected DNSPolicy configuration to match due to hostNetwork but failed")
+	}
+}
+
+func TestPersistentVolumeClaimRetentionPolicy(t *testing.T) {
+	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+		ObjectMeta: metav1.ObjectMeta{},
+		Spec: monitoringv1.PrometheusSpec{
+			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+				PersistentVolumeClaimRetentionPolicy: &appsv1.StatefulSetPersistentVolumeClaimRetentionPolicy{
+					WhenDeleted: appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
+					WhenScaled:  appsv1.DeletePersistentVolumeClaimRetentionPolicyType,
+				},
+			},
+		},
+	})
+	require.NoError(t, err)
+
+	if sset.Spec.PersistentVolumeClaimRetentionPolicy.WhenDeleted != appsv1.DeletePersistentVolumeClaimRetentionPolicyType {
+		t.Fatalf("expected persistentVolumeClaimDeletePolicy.WhenDeleted to be %s but got %s", appsv1.DeletePersistentVolumeClaimRetentionPolicyType, sset.Spec.PersistentVolumeClaimRetentionPolicy.WhenDeleted)
+	}
+
+	if sset.Spec.PersistentVolumeClaimRetentionPolicy.WhenScaled != appsv1.DeletePersistentVolumeClaimRetentionPolicyType {
+		t.Fatalf("expected persistentVolumeClaimDeletePolicy.WhenScaled to be %s but got %s", appsv1.DeletePersistentVolumeClaimRetentionPolicyType, sset.Spec.PersistentVolumeClaimRetentionPolicy.WhenScaled)
+	}
+}
+
+func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		spec monitoringv1.PrometheusSpec
+		tsc  v1.TopologySpreadConstraint
+	}{
+		{
+			name: "without labelSelector and additionalLabels",
+			spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					TopologySpreadConstraints: []monitoringv1.TopologySpreadConstraint{
+						{
+							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
+								MaxSkew:           1,
+								TopologyKey:       "kubernetes.io/hostname",
+								WhenUnsatisfiable: v1.DoNotSchedule,
+							},
+						},
+					},
+				},
+			},
+			tsc: v1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: v1.DoNotSchedule,
+			},
+		},
+		{
+			name: "with labelSelector and without additionalLabels",
+			spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					TopologySpreadConstraints: []monitoringv1.TopologySpreadConstraint{
+						{
+							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
+								MaxSkew:           1,
+								TopologyKey:       "kubernetes.io/hostname",
+								WhenUnsatisfiable: v1.DoNotSchedule,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "prometheus",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			tsc: v1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: v1.DoNotSchedule,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app": "prometheus",
+					},
+				},
+			},
+		},
+		{
+			name: "with labelSelector and additionalLabels as ShardAndNameResource",
+			spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					TopologySpreadConstraints: []monitoringv1.TopologySpreadConstraint{
+						{
+							AdditionalLabelSelectors: ptr.To(monitoringv1.ShardAndResourceNameLabelSelector),
+							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
+								MaxSkew:           1,
+								TopologyKey:       "kubernetes.io/hostname",
+								WhenUnsatisfiable: v1.DoNotSchedule,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "prometheus",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			tsc: v1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: v1.DoNotSchedule,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app":                           "prometheus",
+						"app.kubernetes.io/instance":    "test",
+						"app.kubernetes.io/managed-by":  "prometheus-operator",
+						"prometheus":                    "test",
+						prompkg.ShardLabelName:          "0",
+						prompkg.PrometheusNameLabelName: "test",
+						prompkg.PrometheusK8sLabelName:  "prometheus",
+					},
+				},
+			},
+		},
+		{
+			name: "with labelSelector and additionalLabels as ResourceName",
+			spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					TopologySpreadConstraints: []monitoringv1.TopologySpreadConstraint{
+						{
+							AdditionalLabelSelectors: ptr.To(monitoringv1.ResourceNameLabelSelector),
+							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
+								MaxSkew:           1,
+								TopologyKey:       "kubernetes.io/hostname",
+								WhenUnsatisfiable: v1.DoNotSchedule,
+								LabelSelector: &metav1.LabelSelector{
+									MatchLabels: map[string]string{
+										"app": "prometheus",
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			tsc: v1.TopologySpreadConstraint{
+				MaxSkew:           1,
+				TopologyKey:       "kubernetes.io/hostname",
+				WhenUnsatisfiable: v1.DoNotSchedule,
+				LabelSelector: &metav1.LabelSelector{
+					MatchLabels: map[string]string{
+						"app":                           "prometheus",
+						"app.kubernetes.io/instance":    "test",
+						"app.kubernetes.io/managed-by":  "prometheus-operator",
+						"prometheus":                    "test",
+						prompkg.PrometheusNameLabelName: "test",
+						prompkg.PrometheusK8sLabelName:  "prometheus",
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sts, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "test",
+					Namespace: "ns-test",
+				},
+				Spec: tc.spec,
+			})
+
+			require.NoError(t, err)
+
+			assert.NotEmpty(t, sts.Spec.Template.Spec.TopologySpreadConstraints)
+			assert.Equal(t, tc.tsc, sts.Spec.Template.Spec.TopologySpreadConstraints[0])
+		})
+	}
+}
+
+func TestStartupProbeTimeoutSeconds(t *testing.T) {
+	tests := []struct {
+		maximumStartupDurationSeconds   *int32
+		expectedStartupPeriodSeconds    int32
+		expectedStartupFailureThreshold int32
+	}{
+		{
+			maximumStartupDurationSeconds:   nil,
+			expectedStartupPeriodSeconds:    15,
+			expectedStartupFailureThreshold: 60,
+		},
+		{
+			maximumStartupDurationSeconds:   ptr.To(int32(600)),
+			expectedStartupPeriodSeconds:    60,
+			expectedStartupFailureThreshold: 10,
+		},
+	}
+
+	for _, test := range tests {
+		sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+			ObjectMeta: metav1.ObjectMeta{},
+			Spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					MaximumStartupDurationSeconds: test.maximumStartupDurationSeconds,
+				},
+			},
+		})
+
+		require.NoError(t, err)
+		require.NotNil(t, sset.Spec.Template.Spec.Containers[0].StartupProbe)
+		require.Equal(t, test.expectedStartupPeriodSeconds, sset.Spec.Template.Spec.Containers[0].StartupProbe.PeriodSeconds)
+		require.Equal(t, test.expectedStartupFailureThreshold, sset.Spec.Template.Spec.Containers[0].StartupProbe.FailureThreshold)
+	}
+}
+
+func TestIfThanosVersionDontHaveHttpClientFlag(t *testing.T) {
+	version := "v0.23.0"
+
+	for _, tc := range []struct {
+		name string
+		spec monitoringv1.PrometheusSpec
+	}{
+		{
+			name: "default",
+			spec: monitoringv1.PrometheusSpec{},
+		},
+		{
+			name: "Thanos sidecar",
+			spec: monitoringv1.PrometheusSpec{
+				Thanos: &monitoringv1.ThanosSpec{
+					Version: &version,
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{Spec: tc.spec})
+			require.NoError(t, err)
+			for _, c := range sset.Spec.Template.Spec.Containers {
+				for _, arg := range c.Args {
+					if strings.Contains(arg, "http-client") {
+						t.Fatalf("Expecting http-client flag to not be present in Thanos sidecar")
+					}
+				}
+			}
+		})
 	}
 }

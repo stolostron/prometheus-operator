@@ -24,7 +24,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/pkg/errors"
 	"github.com/prometheus/alertmanager/api/v2/client/silence"
 	"github.com/prometheus/alertmanager/api/v2/models"
 	v1 "k8s.io/api/core/v1"
@@ -61,8 +60,9 @@ receivers:
 func (f *Framework) MakeBasicAlertmanager(ns, name string, replicas int32) *monitoringv1.Alertmanager {
 	return &monitoringv1.Alertmanager{
 		ObjectMeta: metav1.ObjectMeta{
-			Name:      name,
-			Namespace: ns,
+			Name:        name,
+			Namespace:   ns,
+			Annotations: map[string]string{},
 		},
 		Spec: monitoringv1.AlertmanagerSpec{
 			Replicas: &replicas,
@@ -84,7 +84,7 @@ func (f *Framework) CreateAlertmanagerConfig(ctx context.Context, ns, name strin
 	}
 	subRouteJSON, err := json.Marshal(subRoute)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal subroute")
+		return nil, fmt.Errorf("failed to marshal subroute: %w", err)
 	}
 
 	amConfig := &monitoringv1alpha1.AlertmanagerConfig{
@@ -187,17 +187,17 @@ func (f *Framework) CreateAlertmanagerAndWaitUntilReady(ctx context.Context, a *
 	amConfigSecretName := fmt.Sprintf("alertmanager-%s", a.Name)
 	s, err := f.AlertmanagerConfigSecret(a.Namespace, amConfigSecretName)
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("making alertmanager config secret %v failed", amConfigSecretName))
+		return nil, fmt.Errorf("making alertmanager config secret %v failed: %w", amConfigSecretName, err)
 	}
 
 	_, err = f.KubeClient.CoreV1().Secrets(a.Namespace).Create(ctx, s, metav1.CreateOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("creating alertmanager config secret %v failed", s.Name))
+		return nil, fmt.Errorf("creating alertmanager config secret %v failed: %w", s.Name, err)
 	}
 
 	a, err = f.MonClientV1.Alertmanagers(a.Namespace).Create(ctx, a, metav1.CreateOptions{})
 	if err != nil {
-		return nil, errors.Wrap(err, fmt.Sprintf("creating alertmanager %v failed", a.Name))
+		return nil, fmt.Errorf("creating alertmanager %v failed: %w", a.Name, err)
 	}
 
 	return a, f.WaitForAlertmanagerReady(ctx, a)
@@ -224,7 +224,7 @@ func (f *Framework) WaitForAlertmanagerReady(ctx context.Context, a *monitoringv
 		},
 		5*time.Minute,
 	); err != nil {
-		return errors.Wrapf(err, "alertmanager %v/%v failed to become available", a.Namespace, a.Name)
+		return fmt.Errorf("alertmanager %v/%v failed to become available: %w", a.Namespace, a.Name, err)
 	}
 
 	// Check that all pods report the expected number of peers.
@@ -233,11 +233,9 @@ func (f *Framework) WaitForAlertmanagerReady(ctx context.Context, a *monitoringv
 	for i := 0; i < replicas; i++ {
 		name := fmt.Sprintf("alertmanager-%v-%v", a.Name, strconv.Itoa(i))
 		if err := f.WaitForAlertmanagerPodInitialized(ctx, a.Namespace, name, replicas, a.Spec.ForceEnableClusterMode, isAMHTTPS); err != nil {
-			return errors.Wrap(err,
-				fmt.Sprintf(
-					"failed to wait for an Alertmanager cluster (%s) with %d instances to become ready",
-					name, replicas,
-				),
+			return fmt.Errorf(
+				"failed to wait for an Alertmanager cluster (%s) with %d instances to become ready: %w",
+				name, replicas, err,
 			)
 		}
 	}
@@ -248,7 +246,7 @@ func (f *Framework) WaitForAlertmanagerReady(ctx context.Context, a *monitoringv
 func (f *Framework) PatchAlertmanagerAndWaitUntilReady(ctx context.Context, name, ns string, spec monitoringv1.AlertmanagerSpec) (*monitoringv1.Alertmanager, error) {
 	a, err := f.PatchAlertmanager(ctx, name, ns, spec)
 	if err != nil {
-		return nil, errors.Wrapf(err, "failed to patch Alertmanager %s/%s", ns, name)
+		return nil, fmt.Errorf("failed to patch Alertmanager %s/%s: %w", ns, name, err)
 	}
 
 	err = f.WaitForAlertmanagerReady(ctx, a)
@@ -256,7 +254,15 @@ func (f *Framework) PatchAlertmanagerAndWaitUntilReady(ctx context.Context, name
 		return nil, fmt.Errorf("failed to update Alertmanager: %v", err)
 	}
 
-	return a, nil
+func (f *Framework) ScaleAlertmanagerAndWaitUntilReady(ctx context.Context, name, ns string, replicas int32) (*monitoringv1.Alertmanager, error) {
+	return f.PatchAlertmanagerAndWaitUntilReady(
+		ctx,
+		name,
+		ns,
+		monitoringv1.AlertmanagerSpec{
+			Replicas: ptr.To(replicas),
+		},
+	)
 }
 
 func (f *Framework) PatchAlertmanager(ctx context.Context, name, ns string, spec monitoringv1.AlertmanagerSpec) (*monitoringv1.Alertmanager, error) {
@@ -270,7 +276,7 @@ func (f *Framework) PatchAlertmanager(ctx context.Context, name, ns string, spec
 		},
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to marshal Alertmanager spec")
+		return nil, fmt.Errorf("failed to marshal Alertmanager spec: %w", err)
 	}
 
 	p, err := f.MonClientV1.Alertmanagers(ns).Patch(
@@ -305,11 +311,11 @@ func (f *Framework) ScaleAlertmanagerAndWaitUntilReady(ctx context.Context, name
 func (f *Framework) DeleteAlertmanagerAndWaitUntilGone(ctx context.Context, ns, name string) error {
 	_, err := f.MonClientV1.Alertmanagers(ns).Get(ctx, name, metav1.GetOptions{})
 	if err != nil {
-		return errors.Wrap(err, fmt.Sprintf("requesting Alertmanager tpr %v failed", name))
+		return fmt.Errorf("requesting Alertmanager tpr %v failed: %w", name, err)
 	}
 
 	if err := f.MonClientV1.Alertmanagers(ns).Delete(ctx, name, metav1.DeleteOptions{}); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("deleting Alertmanager tpr %v failed", name))
+		return fmt.Errorf("deleting Alertmanager tpr %v failed: %w", name, err)
 	}
 
 	if err := f.WaitForPodsReady(
@@ -319,7 +325,7 @@ func (f *Framework) DeleteAlertmanagerAndWaitUntilGone(ctx context.Context, ns, 
 		0,
 		alertmanager.ListOptions(name),
 	); err != nil {
-		return errors.Wrap(err, fmt.Sprintf("waiting for Alertmanager tpr (%s) to vanish timed out", name))
+		return fmt.Errorf("waiting for Alertmanager tpr (%s) to vanish timed out: %w", name, err)
 	}
 
 	err = f.KubeClient.CoreV1().Secrets(ns).Delete(ctx, fmt.Sprintf("alertmanager-%s", name), metav1.DeleteOptions{})
@@ -469,7 +475,7 @@ func (f *Framework) WaitForAlertmanagerFiringAlert(ctx context.Context, ns, svcN
 		}
 
 		if err := json.NewDecoder(bytes.NewBuffer(resp)).Decode(&alerts); err != nil {
-			return false, errors.Wrap(err, "failed to decode alerts from Alertmanager API")
+			return false, fmt.Errorf("failed to decode alerts from Alertmanager API: %w", err)
 		}
 
 		if len(alerts) != 1 {
@@ -539,7 +545,7 @@ func (f *Framework) WaitForAlertmanagerConfigToContainString(ctx context.Context
 func (f *Framework) WaitForAlertmanagerConfigToBeReloaded(ctx context.Context, ns, amName string, previousReloadTimestamp time.Time) error {
 	const configReloadMetricName = "alertmanager_config_last_reload_success_timestamp_seconds"
 	err := wait.PollUntilContextTimeout(ctx, 10*time.Second, time.Minute*5, false, func(ctx context.Context) (bool, error) {
-		timestampSec, err := f.GetMetricVal(ctx, ns, "alertmanager-"+amName+"-0", "", configReloadMetricName)
+		timestampSec, err := f.GetMetricVal(ctx, "https", ns, "alertmanager-"+amName+"-0", "", configReloadMetricName)
 		if err != nil {
 			return false, err
 		}

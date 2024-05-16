@@ -224,6 +224,7 @@ generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/th
 .PHONY: generate-crds
 generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET)
 	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) crd:crdVersions=v1 paths=./v1/. paths=./v1alpha1/. output:crd:dir=$(PWD)/example/prometheus-operator-crd/
+	VERSION=$(VERSION) ./scripts/generate/append-operator-version.sh
 	find example/prometheus-operator-crd/ -name '*.yaml' -print0 | xargs -0 -I{} sh -c '$(GOJSONTOYAML_BINARY) -yamltojson < "$$1" | jq > "$(PWD)/jsonnet/prometheus-operator/$$(basename $$1 | cut -d'_' -f2 | cut -d. -f1)-crd.json"' -- {}
 	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) crd:crdVersions=v1 paths=./... output:crd:dir=$(PWD)/example/prometheus-operator-crd-full
 	echo "// Code generated using 'make generate-crds'. DO NOT EDIT." > $(PWD)/jsonnet/prometheus-operator/alertmanagerconfigs-v1beta1-crd.libsonnet
@@ -247,7 +248,7 @@ bundle.yaml: generate-crds $(shell find example/rbac/prometheus-operator/*.yaml 
 # See https://github.com/prometheus-operator/prometheus-operator/issues/4355
 stripped-down-crds.yaml: $(shell find example/prometheus-operator-crd/*.yaml -type f) $(GOJSONTOYAML_BINARY)
 	: > $@
-	for f in example/prometheus-operator-crd/*.yaml; do echo '---' >> $@; $(GOJSONTOYAML_BINARY) -yamltojson < $$f | jq 'walk(if type == "object" then with_entries(select(.key | test("description") | not)) else . end)' | $(GOJSONTOYAML_BINARY) >> $@; done
+	for f in example/prometheus-operator-crd/*.yaml; do echo '---' >> $@; $(GOJSONTOYAML_BINARY) -yamltojson < $$f | jq 'walk(if type == "object" then with_entries(if .value|type=="object" then . else select(.key | test("description") | not) end) else . end)' | $(GOJSONTOYAML_BINARY) >> $@; done
 
 scripts/generate/vendor: $(JB_BINARY) $(shell find jsonnet/prometheus-operator -type f)
 	cd scripts/generate; $(JB_BINARY) install;
@@ -360,6 +361,30 @@ test/e2e/remote_write_certs/ca.key test/e2e/remote_write_certs/ca.crt test/e2e/r
 test-e2e: KUBECONFIG?=$(HOME)/.kube/config
 test-e2e: test/instrumented-sample-app/certs/cert.pem test/instrumented-sample-app/certs/key.pem
 	go test -timeout 120m -v ./test/e2e/ $(TEST_RUN_ARGS) --kubeconfig=$(KUBECONFIG) --operator-image=$(IMAGE_OPERATOR):$(TAG) -count=1
+
+.PHONY: test-e2e-alertmanager
+test-e2e-alertmanager:
+	EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
+
+.PHONY: test-e2e-prometheus
+test-e2e-prometheus:
+	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
+
+.PHONY: test-e2e-prometheus-all-namespaces
+test-e2e-prometheus-all-namespaces:
+	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
+
+.PHONY: test-e2e-thanos-ruler
+test-e2e-thanos-ruler:
+	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
+
+.PHONY: test-e2e-operator-upgrade
+test-e2e-operator-upgrade:
+	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
+
+.PHONY: test-e2e-prometheus-upgrade
+test-e2e-prometheus-upgrade:
+	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude FEATURE_GATED_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 ############
 # Binaries #

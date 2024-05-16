@@ -15,28 +15,32 @@
 package thanos
 
 import (
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
 	"strings"
 
 	"github.com/blang/semver/v4"
-	"github.com/pkg/errors"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
+	"github.com/prometheus-operator/prometheus-operator/pkg/webconfig"
 )
 
 const (
 	rulesDir                  = "/etc/thanos/rules"
 	configDir                 = "/etc/thanos/config"
 	storageDir                = "/thanos/data"
+	webConfigDir              = "/etc/thanos/web_config"
+	tlsAssetsDir              = "/etc/thanos/certs"
 	governingServiceName      = "thanos-ruler-operated"
 	defaultPortName           = "web"
 	defaultRetention          = "24h"
@@ -46,15 +50,10 @@ const (
 )
 
 var (
-	minReplicas                 int32 = 1
-	managedByOperatorLabel            = "managed-by"
-	managedByOperatorLabelValue       = "prometheus-operator"
-	managedByOperatorLabels           = map[string]string{
-		managedByOperatorLabel: managedByOperatorLabelValue,
-	}
+	minReplicas int32 = 1
 )
 
-func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string, inputHash string) (*appsv1.StatefulSet, error) {
+func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string, inputHash string, tlsSecrets *operator.ShardedSecret) (*appsv1.StatefulSet, error) {
 
 	if tr.Spec.Resources.Requests == nil {
 		tr.Spec.Resources.Requests = v1.ResourceList{}
@@ -63,49 +62,37 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 		tr.Spec.Resources.Requests[v1.ResourceMemory] = resource.MustParse("200Mi")
 	}
 
-	spec, err := makeStatefulSetSpec(tr, config, ruleConfigMapNames)
+	spec, err := makeStatefulSetSpec(tr, config, ruleConfigMapNames, tlsSecrets)
 	if err != nil {
 		return nil, err
 	}
 
-	boolTrue := true
+	annotations := map[string]string{
+		sSetInputHashName: inputHash,
+	}
+
 	// do not transfer kubectl annotations to the statefulset so it is not
 	// pruned by kubectl
-	annotations := make(map[string]string)
 	for key, value := range tr.ObjectMeta.Annotations {
-		if !strings.HasPrefix(key, "kubectl.kubernetes.io/") {
+		if key != sSetInputHashName && !strings.HasPrefix(key, "kubectl.kubernetes.io/") {
 			annotations[key] = value
 		}
 	}
-	statefulset := &appsv1.StatefulSet{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        prefixedName(tr.Name),
-			Annotations: config.Annotations.Merge(annotations),
-			Labels:      config.Labels.Merge(tr.ObjectMeta.Labels),
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					APIVersion:         tr.APIVersion,
-					BlockOwnerDeletion: &boolTrue,
-					Controller:         &boolTrue,
-					Kind:               tr.Kind,
-					Name:               tr.Name,
-					UID:                tr.UID,
-				},
-			},
-		},
-		Spec: *spec,
-	}
+
+	statefulset := &appsv1.StatefulSet{Spec: *spec}
+
+	operator.UpdateObject(
+		statefulset,
+		operator.WithName(prefixedName(tr.Name)),
+		operator.WithAnnotations(annotations),
+		operator.WithAnnotations(config.Annotations),
+		operator.WithLabels(tr.GetLabels()),
+		operator.WithLabels(config.Labels),
+		operator.WithOwner(tr),
+	)
 
 	if tr.Spec.ImagePullSecrets != nil && len(tr.Spec.ImagePullSecrets) > 0 {
 		statefulset.Spec.Template.Spec.ImagePullSecrets = tr.Spec.ImagePullSecrets
-	}
-
-	if statefulset.ObjectMeta.Annotations == nil {
-		statefulset.ObjectMeta.Annotations = map[string]string{
-			sSetInputHashName: inputHash,
-		}
-	} else {
-		statefulset.ObjectMeta.Annotations[sSetInputHashName] = inputHash
 	}
 
 	storageSpec := tr.Spec.Storage
@@ -152,15 +139,16 @@ func makeStatefulSet(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapN
 	return statefulset, nil
 }
 
-func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string) (*appsv1.StatefulSetSpec, error) {
+func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfigMapNames []string, tlsSecrets *operator.ShardedSecret) (*appsv1.StatefulSetSpec, error) {
 	if tr.Spec.QueryConfig == nil && len(tr.Spec.QueryEndpoints) < 1 {
 		return nil, errors.New(tr.GetName() + ": thanos ruler requires query config or at least one query endpoint to be specified")
 	}
 
 	thanosVersion := operator.StringValOrDefault(tr.Spec.Version, operator.DefaultThanosVersion)
-	if _, err := semver.ParseTolerant(thanosVersion); err != nil {
-		return nil, errors.Wrap(err, "failed to parse Thanos version")
 
+	version, err := semver.ParseTolerant(thanosVersion)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse thanos ruler version: %w", err)
 	}
 
 	trImagePath, err := operator.BuildImagePath(
@@ -171,7 +159,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		"",
 	)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to build image path")
+		return nil, fmt.Errorf("failed to build image path: %w", err)
 	}
 
 	trCLIArgs := []monitoringv1.Argument{
@@ -270,6 +258,20 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.relabel-config-file", Value: fullPath})
 	}
 
+	trVolumes = append(trVolumes, tlsSecrets.Volume("tls-assets"))
+	trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
+		Name:      "tls-assets",
+		ReadOnly:  true,
+		MountPath: tlsAssetsDir,
+	})
+
+	isHTTPS := tr.Spec.Web != nil && tr.Spec.Web.TLSConfig != nil && version.GTE(semver.MustParse("0.21.0"))
+
+	thanosrulerURIScheme := "http"
+	if isHTTPS {
+		thanosrulerURIScheme = "https"
+	}
+
 	if tr.Spec.GRPCServerTLSConfig != nil {
 		tls := tr.Spec.GRPCServerTLSConfig
 		if tls.CertFile != "" {
@@ -303,6 +305,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 	// The first argument to thanos must be "rule" to start thanos ruler, e.g. "thanos rule --data-dir..."
 	containerArgs = append([]string{"rule"}, containerArgs...)
 
+	var configReloaderWebConfigFile string
 	var additionalContainers []v1.Container
 	if len(ruleConfigMapNames) != 0 {
 		var (
@@ -319,13 +322,37 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 			watchedDirectories = append(watchedDirectories, mountPath)
 		}
 
+		if version.GTE(semver.MustParse("0.21.0")) {
+			var fields monitoringv1.WebConfigFileFields
+			if tr.Spec.Web != nil {
+				fields = tr.Spec.Web.WebConfigFileFields
+			}
+
+			webConfig, err := webconfig.New(webConfigDir, webConfigSecretName(tr.Name), fields)
+			if err != nil {
+				return nil, err
+			}
+
+			confArg, configVol, configMount, err := webConfig.GetMountParameters()
+			if err != nil {
+				return nil, err
+			}
+			containerArgs = append(containerArgs, fmt.Sprintf("--http.config=%s", confArg.Value))
+			trVolumes = append(trVolumes, configVol...)
+			trVolumeMounts = append(trVolumeMounts, configMount...)
+
+			configReloaderWebConfigFile = confArg.Value
+			configReloaderVolumeMounts = append(configReloaderVolumeMounts, configMount...)
+		}
+
 		additionalContainers = append(
 			additionalContainers,
 			operator.CreateConfigReloader(
 				"config-reloader",
 				operator.ReloaderConfig(config.ReloaderConfig),
+				operator.WebConfigFile(configReloaderWebConfigFile),
 				operator.ReloaderURL(url.URL{
-					Scheme: "http",
+					Scheme: thanosrulerURIScheme,
 					Host:   config.LocalHost + ":10902",
 					Path:   path.Clean(tr.Spec.RoutePrefix + "/-/reload"),
 				}),
@@ -390,15 +417,8 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		})
 	}
 
-	for _, thanosRulerVM := range tr.Spec.VolumeMounts {
-		trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
-			Name:      thanosRulerVM.Name,
-			MountPath: thanosRulerVM.MountPath,
-		})
-	}
+	trVolumeMounts = append(trVolumeMounts, tr.Spec.VolumeMounts...)
 
-	boolFalse := false
-	boolTrue := true
 	operatorContainers := append([]v1.Container{
 		{
 			Name:                     "thanos-ruler",
@@ -411,8 +431,8 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 			Ports:                    ports,
 			TerminationMessagePolicy: v1.TerminationMessageFallbackToLogsOnError,
 			SecurityContext: &v1.SecurityContext{
-				AllowPrivilegeEscalation: &boolFalse,
-				ReadOnlyRootFilesystem:   &boolTrue,
+				AllowPrivilegeEscalation: ptr.To(false),
+				ReadOnlyRootFilesystem:   ptr.To(true),
 				Capabilities: &v1.Capabilities{
 					Drop: []v1.Capability{"ALL"},
 				},
@@ -422,10 +442,8 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 
 	containers, err := k8sutil.MergePatchContainers(operatorContainers, tr.Spec.Containers)
 	if err != nil {
-		return nil, errors.Wrap(err, "failed to merge containers spec")
+		return nil, fmt.Errorf("failed to merge containers spec: %w", err)
 	}
-
-	terminationGracePeriod := int64(120)
 
 	var minReadySeconds int32
 	if tr.Spec.MinReadySeconds != nil {
@@ -454,7 +472,7 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 				NodeSelector:                  tr.Spec.NodeSelector,
 				PriorityClassName:             tr.Spec.PriorityClassName,
 				ServiceAccountName:            tr.Spec.ServiceAccountName,
-				TerminationGracePeriodSeconds: &terminationGracePeriod,
+				TerminationGracePeriodSeconds: ptr.To(int64(120)),
 				Containers:                    containers,
 				InitContainers:                tr.Spec.InitContainers,
 				Volumes:                       trVolumes,
@@ -469,27 +487,11 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 }
 
 func makeStatefulSetService(tr *monitoringv1.ThanosRuler, config Config) *v1.Service {
-
 	if tr.Spec.PortName == "" {
 		tr.Spec.PortName = defaultPortName
 	}
 
 	svc := &v1.Service{
-		ObjectMeta: metav1.ObjectMeta{
-			Name:        governingServiceName,
-			Annotations: config.Annotations,
-			Labels: config.Labels.Merge(map[string]string{
-				"operated-thanos-ruler": "true",
-			}),
-			OwnerReferences: []metav1.OwnerReference{
-				{
-					Name:       tr.GetName(),
-					Kind:       tr.Kind,
-					APIVersion: tr.APIVersion,
-					UID:        tr.GetUID(),
-				},
-			},
-		},
 		Spec: v1.ServiceSpec{
 			ClusterIP: "None",
 			Ports: []v1.ServicePort{
@@ -511,6 +513,16 @@ func makeStatefulSetService(tr *monitoringv1.ThanosRuler, config Config) *v1.Ser
 			},
 		},
 	}
+
+	operator.UpdateObject(
+		svc,
+		operator.WithName(governingServiceName),
+		operator.WithAnnotations(config.Annotations),
+		operator.WithLabels(map[string]string{"operated-thanos-ruler": "true"}),
+		operator.WithLabels(config.Labels),
+		operator.WithOwner(tr),
+	)
+
 	return svc
 }
 
@@ -520,6 +532,14 @@ func prefixedName(name string) string {
 
 func volumeName(name string) string {
 	return fmt.Sprintf("%s-data", prefixedName(name))
+}
+
+func tlsAssetsSecretName(name string) string {
+	return fmt.Sprintf("%s-tls-assets", prefixedName(name))
+}
+
+func webConfigSecretName(name string) string {
+	return fmt.Sprintf("%s-web-config", prefixedName(name))
 }
 
 func mountSecret(secretSelector *v1.SecretKeySelector, volumeName string, trVolumes *[]v1.Volume, trVolumeMounts *[]v1.VolumeMount) string {

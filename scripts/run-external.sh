@@ -13,6 +13,7 @@ declare SHOW_USAGE=false
 declare SKIP_OPERATOR_RUN_CHECK=false
 declare USE_DEFAULT_CONTEXT=false
 declare API_SERVER=""
+declare IMPERSONATE_USER="${IMPERSONATE_USER:-}"
 
 # tmp operator files that needs to be cleaned up
 declare -r CA_FILE="tmp/CA_FILE"
@@ -121,16 +122,11 @@ extract_certs() {
 run_operator() {
 	header "Run Operator"
 
-	# cleanup the files soon after the operator has had time to read it
-	(
-		sleep 5
-		cleanup
-	) &
-
 	info "Running operator against cluster: $CLUSTER - $API_SERVER"
 	echo "──────────────────────────────────────────────────────────────────"
 
 	run ./operator \
+		--as="$IMPERSONATE_USER" \
 		--apiserver="$API_SERVER" \
 		--ca-file="$CA_FILE" \
 		--cert-file="$CERT_FILE" \
@@ -257,7 +253,7 @@ main() {
 		exit 1
 	}
 
-	# all files are relative to the the root of the project
+	# all files are relative to the root of the project
 	cd "$(git rev-parse --show-toplevel)"
 	mkdir -p tmp
 

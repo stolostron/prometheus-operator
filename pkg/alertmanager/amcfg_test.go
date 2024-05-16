@@ -764,6 +764,16 @@ func TestGenerateConfig(t *testing.T) {
 		t.Fatal(err)
 	}
 
+	version26, err := semver.ParseTolerant("v0.26.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	version27, err := semver.ParseTolerant("v0.27.0")
+	if err != nil {
+		t.Fatal(err)
+	}
+
 	globalSlackAPIURL, err := url.Parse("http://slack.example.com")
 	if err != nil {
 		t.Fatal("Could not parse slack API URL")
@@ -1908,6 +1918,161 @@ func TestGenerateConfig(t *testing.T) {
 			},
 			golden: "CR_with_Active_Time_Intervals.golden",
 		},
+		{
+			name:      "CR with MSTeams Receiver",
+			amVersion: &version26,
+			kclient: fake.NewSimpleClientset(
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ms-teams-secret",
+						Namespace: "mynamespace",
+					},
+					Data: map[string][]byte{
+						"url": []byte("https://webhook.office.com/webhookb2/id/IncomingWebhook/id"),
+					},
+				},
+			),
+			baseConfig: alertmanagerConfig{
+				Route: &route{
+					Receiver: "null",
+				},
+				Receivers: []*receiver{{Name: "null"}},
+			},
+			amConfigs: map[string]*monitoringv1alpha1.AlertmanagerConfig{
+				"mynamespace": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "myamc",
+						Namespace: "mynamespace",
+					},
+					Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
+						Route: &monitoringv1alpha1.Route{
+							Receiver: "test",
+						},
+						Receivers: []monitoringv1alpha1.Receiver{
+							{
+								Name: "test",
+								MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
+									{
+										WebhookURL: corev1.SecretKeySelector{
+											Key: "url",
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "ms-teams-secret",
+											},
+										},
+										Title: ptr.To("test title"),
+										Text:  ptr.To("test text"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			golden: "CR_with_MSTeams_Receiver.golden",
+		},
+		{
+			name:      "CR with MSTeams Receiver with Summary",
+			amVersion: &version27,
+			kclient: fake.NewSimpleClientset(
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ms-teams-secret",
+						Namespace: "mynamespace",
+					},
+					Data: map[string][]byte{
+						"url": []byte("https://webhook.office.com/webhookb2/id/IncomingWebhook/id"),
+					},
+				},
+			),
+			baseConfig: alertmanagerConfig{
+				Route: &route{
+					Receiver: "null",
+				},
+				Receivers: []*receiver{{Name: "null"}},
+			},
+			amConfigs: map[string]*monitoringv1alpha1.AlertmanagerConfig{
+				"mynamespace": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "myamc",
+						Namespace: "mynamespace",
+					},
+					Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
+						Route: &monitoringv1alpha1.Route{
+							Receiver: "test",
+						},
+						Receivers: []monitoringv1alpha1.Receiver{
+							{
+								Name: "test",
+								MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
+									{
+										WebhookURL: corev1.SecretKeySelector{
+											Key: "url",
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "ms-teams-secret",
+											},
+										},
+										Title:   ptr.To("test title"),
+										Summary: ptr.To("test summary"),
+										Text:    ptr.To("test text"),
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			golden: "CR_with_MSTeams_Receiver_Summary.golden",
+		},
+		{
+			name:      "CR with MSTeams Receiver with Partial Conf",
+			amVersion: &version26,
+			kclient: fake.NewSimpleClientset(
+				&corev1.Secret{
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "ms-teams-secret",
+						Namespace: "mynamespace",
+					},
+					Data: map[string][]byte{
+						"url": []byte("https://webhook.office.com/webhookb2/id/IncomingWebhook/id"),
+					},
+				},
+			),
+			baseConfig: alertmanagerConfig{
+				Route: &route{
+					Receiver: "null",
+				},
+				Receivers: []*receiver{{Name: "null"}},
+			},
+			amConfigs: map[string]*monitoringv1alpha1.AlertmanagerConfig{
+				"mynamespace": {
+					ObjectMeta: metav1.ObjectMeta{
+						Name:      "myamc",
+						Namespace: "mynamespace",
+					},
+					Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
+						Route: &monitoringv1alpha1.Route{
+							Receiver: "test",
+						},
+						Receivers: []monitoringv1alpha1.Receiver{
+							{
+								Name: "test",
+								MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
+									{
+										WebhookURL: corev1.SecretKeySelector{
+											Key: "url",
+											LocalObjectReference: corev1.LocalObjectReference{
+												Name: "ms-teams-secret",
+											},
+										},
+									},
+								},
+							},
+						},
+					},
+				},
+			},
+			golden: "CR_with_MSTeams_Receiver_Partial_Conf.golden",
+		},
 	}
 
 	logger := log.NewNopLogger()
@@ -1966,6 +2131,9 @@ func TestSanitizeConfig(t *testing.T) {
 
 	versionTelegramBotTokenFileAllowed := semver.Version{Major: 0, Minor: 26}
 	versionTelegramBotTokenFileNotAllowed := semver.Version{Major: 0, Minor: 25}
+
+	versionMSTeamsSummaryAllowed := semver.Version{Major: 0, Minor: 27}
+	versionMSTeamsSummaryNotAllowed := semver.Version{Major: 0, Minor: 26}
 
 	for _, tc := range []struct {
 		name           string
@@ -2490,6 +2658,73 @@ func TestSanitizeConfig(t *testing.T) {
 			},
 			expectErr: true,
 		},
+		{
+			name:           "summary is dropped for unsupported versions for MSTeams config",
+			againstVersion: versionMSTeamsSummaryNotAllowed,
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						Name: "msteams",
+						MSTeamsConfigs: []*msTeamsConfig{
+							{
+								WebhookURL: "http://example.com",
+								Title:      "test title",
+								Summary:    "test summary",
+								Text:       "test text",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						Name: "msteams",
+						MSTeamsConfigs: []*msTeamsConfig{
+							{
+								WebhookURL: "http://example.com",
+								Title:      "test title",
+								Text:       "test text",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "summary add in supported versions for MSTeams config",
+			againstVersion: versionMSTeamsSummaryAllowed,
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						Name: "msteams",
+						MSTeamsConfigs: []*msTeamsConfig{
+							{
+								WebhookURL: "http://example.com",
+								Title:      "test title",
+								Summary:    "test summary",
+								Text:       "test text",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						Name: "msteams",
+						MSTeamsConfigs: []*msTeamsConfig{
+							{
+								WebhookURL: "http://example.com",
+								Title:      "test title",
+								Summary:    "test summary",
+								Text:       "test text",
+							},
+						},
+					},
+				},
+			},
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			err := tc.in.sanitize(tc.againstVersion, logger)
@@ -2885,7 +3120,126 @@ func TestTimeInterval(t *testing.T) {
 		})
 	}
 }
+func TestSanitizePushoverReceiverConfig(t *testing.T) {
+	logger := log.NewNopLogger()
 
+	for _, tc := range []struct {
+		name           string
+		againstVersion semver.Version
+		in             *alertmanagerConfig
+		expect         alertmanagerConfig
+		expectErr      bool
+	}{
+		{
+			name:           "Test pushover user_key/token takes precedence in pushover config",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:     "foo",
+								UserKeyFile: "/path/use_key_file",
+								Token:       "bar",
+								TokenFile:   "/path/token_file",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:     "foo",
+								UserKeyFile: "",
+								Token:       "bar",
+								TokenFile:   "",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "Test pushover token or token_file must be configured",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey: "foo",
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name:           "Test pushover user_key or user_key_file must be configured",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								Token: "bar",
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name:           "Test pushover user_key/token_file dropped in pushover config for unsupported versions",
+			againstVersion: semver.Version{Major: 0, Minor: 25},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:   "foo",
+								TokenFile: "/path/token_file",
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+		{
+			name:           "Test pushover user_key_file/token dropped in pushover config for unsupported versions",
+			againstVersion: semver.Version{Major: 0, Minor: 25},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKeyFile: "/path/use_key_file",
+								Token:       "bar",
+							},
+						},
+					},
+				},
+			},
+			expectErr: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.in.sanitize(tc.againstVersion, logger)
+			if tc.expectErr {
+				require.Error(t, err)
+				return
+			}
+			require.NoError(t, err)
+			require.Equal(t, tc.expect, *tc.in)
+		})
+	}
+}
 func TestSanitizeEmailConfig(t *testing.T) {
 	logger := log.NewNopLogger()
 
@@ -3083,6 +3437,235 @@ func TestSanitizeVictorOpsConfig(t *testing.T) {
 						VictorOpsConfigs: []*victorOpsConfig{
 							{
 								APIKeyFile: "",
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.in.sanitize(tc.againstVersion, logger)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error but got: %q", err)
+			}
+
+			require.Equal(t, tc.expect, *tc.in)
+		})
+	}
+}
+
+func TestSanitizeWebhookConfig(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	for _, tc := range []struct {
+		name           string
+		againstVersion semver.Version
+		in             *alertmanagerConfig
+		expect         alertmanagerConfig
+		expectErr      bool
+	}{
+		{
+			name:           "Test webhook_url_file is dropped in webhook config for unsupported versions",
+			againstVersion: semver.Version{Major: 0, Minor: 25},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						WebhookConfigs: []*webhookConfig{
+							{
+								URLFile: "foo",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						WebhookConfigs: []*webhookConfig{
+							{
+								URLFile: "",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "Test url takes precedence in webhook config",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						WebhookConfigs: []*webhookConfig{
+							{
+								URL:     "foo",
+								URLFile: "bar",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						WebhookConfigs: []*webhookConfig{
+							{
+								URL: "foo",
+							},
+						},
+					},
+				},
+			},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.in.sanitize(tc.againstVersion, logger)
+			if tc.expectErr {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("expected no error but got: %q", err)
+			}
+
+			require.Equal(t, tc.expect, *tc.in)
+		})
+	}
+}
+
+func TestSanitizePushoverConfig(t *testing.T) {
+	logger := log.NewNopLogger()
+
+	for _, tc := range []struct {
+		name           string
+		againstVersion semver.Version
+		in             *alertmanagerConfig
+		expect         alertmanagerConfig
+		expectErr      bool
+	}{
+		{
+			name:           "Test pushover_user_key_file is dropped in pushover config for unsupported versions",
+			againstVersion: semver.Version{Major: 0, Minor: 25},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:     "key",
+								UserKeyFile: "foo",
+								Token:       "token",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:     "key",
+								UserKeyFile: "",
+								Token:       "token",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "Test pushover_token_file is dropped in pushover config for unsupported versions",
+			againstVersion: semver.Version{Major: 0, Minor: 25},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:   "key",
+								Token:     "token",
+								TokenFile: "foo",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:   "key",
+								Token:     "token",
+								TokenFile: "",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "Test user_key takes precedence in pushover config",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:     "foo",
+								UserKeyFile: "bar",
+								Token:       "token",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey: "foo",
+								Token:   "token",
+							},
+						},
+					},
+				},
+			},
+		},
+		{
+			name:           "Test token takes precedence in pushover config",
+			againstVersion: semver.Version{Major: 0, Minor: 26},
+			in: &alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey:   "foo",
+								Token:     "foo",
+								TokenFile: "bar",
+							},
+						},
+					},
+				},
+			},
+			expect: alertmanagerConfig{
+				Receivers: []*receiver{
+					{
+						PushoverConfigs: []*pushoverConfig{
+							{
+								UserKey: "foo",
+								Token:   "foo",
 							},
 						},
 					},
@@ -3382,7 +3965,7 @@ func TestSanitizeRoute(t *testing.T) {
 
 // We want to ensure that the imported types from config.MuteTimeInterval
 // and any others with custom marshalling/unmarshalling are parsed
-// into the internal struct as expected
+// into the internal struct as expected.
 func TestLoadConfig(t *testing.T) {
 	testCase := []struct {
 		name     string

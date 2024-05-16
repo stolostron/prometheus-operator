@@ -44,7 +44,8 @@ var (
 
 func TestStatefulSetLabelingAndAnnotations(t *testing.T) {
 	labels := map[string]string{
-		"testlabel": "testlabelvalue",
+		"testlabel":  "testlabelvalue",
+		"managed-by": "prometheus-operator",
 	}
 	annotations := map[string]string{
 		"testannotation": "testannotationvalue",
@@ -64,7 +65,7 @@ func TestStatefulSetLabelingAndAnnotations(t *testing.T) {
 			Annotations: annotations,
 		},
 		Spec: monitoringv1.ThanosRulerSpec{QueryEndpoints: emptyQueryEndpoints},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 	require.NoError(t, err)
 
@@ -95,7 +96,7 @@ func TestPodLabelsAnnotations(t *testing.T) {
 				Labels:      labels,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 	if val, ok := sset.Spec.Template.ObjectMeta.Labels["testlabel"]; !ok || val != "testvalue" {
 		t.Fatal("Pod labels are not properly propagated")
@@ -113,7 +114,7 @@ func TestThanosDefaultBaseImageFlag(t *testing.T) {
 
 	sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
 		Spec: monitoringv1.ThanosRulerSpec{QueryEndpoints: emptyQueryEndpoints},
-	}, thanosBaseImageConfig, nil, "")
+	}, thanosBaseImageConfig, nil, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	image := sset.Spec.Template.Spec.Containers[0].Image
@@ -132,6 +133,17 @@ func TestStatefulSetVolumes(t *testing.T) {
 					Containers: []v1.Container{
 						{
 							VolumeMounts: []v1.VolumeMount{
+								{
+									Name:      "tls-assets",
+									ReadOnly:  true,
+									MountPath: "/etc/thanos/certs",
+								},
+								{
+									Name:      "web-config",
+									ReadOnly:  true,
+									MountPath: "/etc/thanos/web_config/web-config.yaml",
+									SubPath:   "web-config.yaml",
+								},
 								{
 									Name:      "thanos-ruler-foo-data",
 									ReadOnly:  false,
@@ -154,6 +166,22 @@ func TestStatefulSetVolumes(t *testing.T) {
 						},
 					},
 					Volumes: []v1.Volume{
+						{
+							Name: "tls-assets",
+							VolumeSource: v1.VolumeSource{
+								Projected: &v1.ProjectedVolumeSource{
+									Sources: []v1.VolumeProjection{},
+								},
+							},
+						},
+						{
+							Name: "web-config",
+							VolumeSource: v1.VolumeSource{
+								Secret: &v1.SecretVolumeSource{
+									SecretName: "thanos-ruler-foo-web-config",
+								},
+							},
+						},
 						{
 							Name: "rules-configmap-one",
 							VolumeSource: v1.VolumeSource{
@@ -210,7 +238,7 @@ func TestStatefulSetVolumes(t *testing.T) {
 				},
 			},
 		},
-	}, defaultTestConfig, []string{"rules-configmap-one"}, "")
+	}, defaultTestConfig, []string{"rules-configmap-one"}, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 	if !reflect.DeepEqual(expected.Spec.Template.Spec.Volumes, sset.Spec.Template.Spec.Volumes) {
 		fmt.Println(pretty.Compare(expected.Spec.Template.Spec.Volumes, sset.Spec.Template.Spec.Volumes))
@@ -243,7 +271,7 @@ func TestTracing(t *testing.T) {
 				Key: secretKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -304,7 +332,7 @@ func TestTracingFile(t *testing.T) {
 				Key: testKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -354,7 +382,7 @@ func TestObjectStorage(t *testing.T) {
 				Key: secretKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -415,7 +443,7 @@ func TestObjectStorageFile(t *testing.T) {
 				Key: testKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -465,7 +493,7 @@ func TestAlertRelabel(t *testing.T) {
 				Key: secretKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -526,7 +554,7 @@ func TestAlertRelabelFile(t *testing.T) {
 				Key: testKey,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -627,7 +655,7 @@ func TestLabelsAndAlertDropLabels(t *testing.T) {
 					Labels:          tc.Labels,
 					AlertDropLabels: tc.AlertDropLabels,
 				},
-			}, defaultTestConfig, nil, "")
+			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 			if err != nil {
 				t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 			}
@@ -659,7 +687,7 @@ func TestAdditionalContainers(t *testing.T) {
 	// The base to compare everything against
 	baseSet, err := makeStatefulSet(&monitoringv1.ThanosRuler{
 		Spec: monitoringv1.ThanosRulerSpec{QueryEndpoints: emptyQueryEndpoints},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	// Add an extra container
@@ -672,7 +700,7 @@ func TestAdditionalContainers(t *testing.T) {
 				},
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	if len(baseSet.Spec.Template.Spec.Containers)+1 != len(addSset.Spec.Template.Spec.Containers) {
@@ -692,7 +720,7 @@ func TestAdditionalContainers(t *testing.T) {
 				},
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	require.NoError(t, err)
 
 	if len(baseSet.Spec.Template.Spec.Containers) != len(modSset.Spec.Template.Spec.Containers) {
@@ -720,7 +748,7 @@ func TestRetention(t *testing.T) {
 					Retention:      tc.specRetention,
 					QueryEndpoints: emptyQueryEndpoints,
 				},
-			}, defaultTestConfig, nil, "")
+			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 			if err != nil {
 				t.Fatalf("expecting no error but got %q", err)
@@ -805,7 +833,7 @@ func TestPodTemplateConfig(t *testing.T) {
 			ImagePullPolicy:    imagePullPolicy,
 			AdditionalArgs:     additionalArgs,
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -860,7 +888,7 @@ func TestExternalQueryURL(t *testing.T) {
 			AlertQueryURL:  "https://example.com/",
 			QueryEndpoints: emptyQueryEndpoints,
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
 	}
@@ -891,7 +919,7 @@ func TestSidecarResources(t *testing.T) {
 		}
 		// thanos-ruler sset will only have a configReloader side car
 		// if it has to mount a ConfigMap
-		sset, err := makeStatefulSet(tr, testConfig, []string{"my-configmap"}, "")
+		sset, err := makeStatefulSet(tr, testConfig, []string{"my-configmap"}, "", &operator.ShardedSecret{})
 		require.NoError(t, err)
 		return sset
 	})
@@ -905,7 +933,7 @@ func TestStatefulSetMinReadySeconds(t *testing.T) {
 		},
 	}
 
-	statefulSet, err := makeStatefulSetSpec(&tr, defaultTestConfig, nil)
+	statefulSet, err := makeStatefulSetSpec(&tr, defaultTestConfig, nil, &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -916,7 +944,7 @@ func TestStatefulSetMinReadySeconds(t *testing.T) {
 	// assert set correctly if not nil
 	var expect uint32 = 5
 	tr.Spec.MinReadySeconds = &expect
-	statefulSet, err = makeStatefulSetSpec(&tr, defaultTestConfig, nil)
+	statefulSet, err = makeStatefulSetSpec(&tr, defaultTestConfig, nil, &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -934,7 +962,7 @@ func TestStatefulSetServiceName(t *testing.T) {
 
 	// assert set correctly
 	expect := governingServiceName
-	spec, err := makeStatefulSetSpec(&tr, defaultTestConfig, nil)
+	spec, err := makeStatefulSetSpec(&tr, defaultTestConfig, nil, &operator.ShardedSecret{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -974,7 +1002,7 @@ func TestStatefulSetPVC(t *testing.T) {
 				VolumeClaimTemplate: pvc,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 	require.NoError(t, err)
 	ssetPvc := sset.Spec.VolumeClaimTemplates[0]
@@ -1006,7 +1034,7 @@ func TestStatefulEmptyDir(t *testing.T) {
 				EmptyDir: &emptyDir,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 	require.NoError(t, err)
 	ssetVolumes := sset.Spec.Template.Spec.Volumes
@@ -1045,7 +1073,7 @@ func TestStatefulSetEphemeral(t *testing.T) {
 				Ephemeral: &ephemeral,
 			},
 		},
-	}, defaultTestConfig, nil, "")
+	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 	require.NoError(t, err)
 	ssetVolumes := sset.Spec.Template.Spec.Volumes
@@ -1068,13 +1096,13 @@ func TestThanosVersion(t *testing.T) {
 		{"0.29.0-0123", "", true},
 		{"0.29.0.DEV", "", true},
 	} {
-		t.Run(string(tc.version), func(t *testing.T) {
+		t.Run(tc.version, func(t *testing.T) {
 			sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
 				Spec: monitoringv1.ThanosRulerSpec{
 					QueryEndpoints: emptyQueryEndpoints,
 					Version:        tc.version,
 				},
-			}, defaultTestConfig, nil, "")
+			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
 
 			if tc.expectedError && err == nil {
 				t.Fatal("expected error but got nil")

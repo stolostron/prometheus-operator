@@ -37,6 +37,8 @@ var (
 	opImage                  *string
 )
 
+const testControllerID = "--controller-id=42"
+
 func skipPrometheusAllNSTests(t *testing.T) {
 	if os.Getenv("EXCLUDE_PROMETHEUS_ALL_NS_TESTS") != "" {
 		t.Skip("Skipping Prometheus all namespace tests")
@@ -199,6 +201,7 @@ func TestAllNS(t *testing.T) {
 	t.Run("x", testAllNSAlertmanager)
 	t.Run("y", testAllNSPrometheus)
 	t.Run("z", testAllNSThanosRuler)
+	t.Run("multipleOperators", testMultipleOperators(testCtx))
 
 	// Check if Prometheus Operator ever restarted.
 	opts := metav1.ListOptions{LabelSelector: fields.SelectorFromSet(fields.Set(map[string]string{
@@ -232,6 +235,7 @@ func TestAllNS(t *testing.T) {
 func testAllNSAlertmanager(t *testing.T) {
 	skipAlertmanagerTests(t)
 	testFuncs := map[string]func(t *testing.T){
+		"AlertmanagerConfigMatcherStrategy":       testAlertmanagerConfigMatcherStrategy,
 		"AlertmanagerCRD":                         testAlertmanagerCRDValidation,
 		"AMCreateDeleteCluster":                   testAMCreateDeleteCluster,
 		"AMWithStatefulsetCreationFailure":        testAlertmanagerWithStatefulsetCreationFailure,
@@ -266,7 +270,7 @@ func testAllNSPrometheus(t *testing.T) {
 		"PrometheusCRDValidation":                   testPrometheusCRDValidation,
 		"PromRemoteWriteWithTLS":                    testPromRemoteWriteWithTLS,
 		"PromCreateDeleteCluster":                   testPromCreateDeleteCluster,
-		"PromScaleUpDownCluster":                    testPromScaleUpDownCluster,
+		"PromScaleUpDownCluster":                    testPromScaleUpDownReplicas,
 		"PromNoServiceMonitorSelector":              testPromNoServiceMonitorSelector,
 		"PromResourceUpdate":                        testPromResourceUpdate,
 		"PromStorageLabelsAnnotations":              testPromStorageLabelsAnnotations,
@@ -313,6 +317,9 @@ func testAllNSPrometheus(t *testing.T) {
 		"ScrapeConfigKubeNode":                      testScrapeConfigKubernetesNodeRole,
 		"ScrapeConfigDNSSD":                         testScrapeConfigDNSSDConfig,
 		"PrometheusWithStatefulsetCreationFailure":  testPrometheusWithStatefulsetCreationFailure,
+		"PrometheusAgentCheckStorageClass":          testAgentCheckStorageClass,
+		"PrometheusAgentStatusScale":                testPrometheusAgentStatusScale,
+		"PrometheusStatusScale":                     testPrometheusStatusScale,
 	}
 
 	for name, f := range testFuncs {
@@ -330,6 +337,7 @@ func testAllNSThanosRuler(t *testing.T) {
 		"ThanosRulerMinReadySeconds":                    testTRMinReadySeconds,
 		"ThanosRulerAlertmanagerConfig":                 testTRAlertmanagerConfig,
 		"ThanosRulerQueryConfig":                        testTRQueryConfig,
+		"ThanosRulerCheckStorageClass":                  testTRCheckStorageClass,
 	}
 	for name, f := range testFuncs {
 		t.Run(name, f)
@@ -363,15 +371,17 @@ func TestDenylist(t *testing.T) {
 	}
 }
 
-// TestPromInstanceNs tests prometheus operator in different scenarios when --prometheus-instance-namespace is given
+// TestPromInstanceNs tests prometheus operator in different scenarios when --prometheus-instance-namespace is given.
 func TestPromInstanceNs(t *testing.T) {
 	skipPrometheusTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		"AllNs":                 testPrometheusInstanceNamespacesAllNs,
-		"AllowList":             testPrometheusInstanceNamespacesAllowList,
-		"DenyList":              testPrometheusInstanceNamespacesDenyList,
-		"NamespaceNotFound":     testPrometheusInstanceNamespacesNamespaceNotFound,
-		"ScrapeConfigLifecycle": testScrapeConfigLifecycle,
+		"AllNs":                              testPrometheusInstanceNamespacesAllNs,
+		"AllowList":                          testPrometheusInstanceNamespacesAllowList,
+		"DenyList":                           testPrometheusInstanceNamespacesDenyList,
+		"NamespaceNotFound":                  testPrometheusInstanceNamespacesNamespaceNotFound,
+		"ScrapeConfigLifecycle":              testScrapeConfigLifecycle,
+		"ScrapeConfigLifecycleInDifferentNs": testScrapeConfigLifecycleInDifferentNS,
+		"ConfigReloaderResources":            testConfigReloaderResources,
 	}
 
 	for name, f := range testFuncs {
@@ -379,7 +389,7 @@ func TestPromInstanceNs(t *testing.T) {
 	}
 }
 
-// TestAlertmanagerInstanceNs tests prometheus operator in different scenarios when --alertmanager-instance-namespace is given
+// TestAlertmanagerInstanceNs tests prometheus operator in different scenarios when --alertmanager-instance-namespace is given.
 func TestAlertmanagerInstanceNs(t *testing.T) {
 	skipAlertmanagerTests(t)
 	testFuncs := map[string]func(t *testing.T){
@@ -393,7 +403,7 @@ func TestAlertmanagerInstanceNs(t *testing.T) {
 	}
 }
 
-// TestOperatorUpgrade tests the prometheus upgrade from previous stable minor version to current version
+// TestOperatorUpgrade tests the prometheus upgrade from previous stable minor version to current version.
 func TestOperatorUpgrade(t *testing.T) {
 	skipOperatorUpgradeTests(t)
 	testFuncs := map[string]func(t *testing.T){
@@ -410,16 +420,25 @@ const (
 	prometheusOperatorServiceName = "prometheus-operator"
 )
 
-// TestPrometheusVersionUpgrade tests that all Prometheus versions in the compatibility matrix can be upgraded
+// TestPrometheusVersionUpgrade tests that all Prometheus versions in the compatibility matrix can be upgraded.
 func TestPrometheusVersionUpgrade(t *testing.T) {
 	skipPromVersionUpgradeTests(t)
-	testFuncs := map[string]func(t *testing.T){
-		"PromVersionMigration": testPromVersionMigration,
+
+	testCtx := framework.NewTestCtx(t)
+	defer testCtx.Cleanup(t)
+
+	ns := framework.CreateNamespace(context.Background(), t, testCtx)
+
+	finalizers, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, nil, nil, nil, nil, true, true, true)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	for name, f := range testFuncs {
-		t.Run(name, f)
+	for _, f := range finalizers {
+		testCtx.AddFinalizerFn(f)
 	}
+
+	t.Run("PromVersionMigration", testPromVersionMigration)
 }
 
 func testServerTLS(ctx context.Context, namespace string) func(t *testing.T) {
@@ -434,6 +453,40 @@ func testServerTLS(ctx context.Context, namespace string) func(t *testing.T) {
 		_, err := request.DoRaw(ctx)
 		if err != nil {
 			t.Fatal(err)
+		}
+	}
+}
+
+// TestIsManagedByController test prometheus operator managing object with correct ControlerID.
+func testMultipleOperators(testCtx *operatorFramework.TestCtx) func(t *testing.T) {
+	return func(t *testing.T) {
+		skipPrometheusTests(t)
+
+		ns := framework.CreateNamespace(context.Background(), t, testCtx)
+		// Create operator-2 in a new ns and set controller-id.
+		finalizers, err := framework.CreateOrUpdatePrometheusOperatorWithOpts(context.Background(),
+			operatorFramework.PrometheusOperatorOpts{
+				Namespace:           ns,
+				ClusterRoleBindings: true,
+				EnableScrapeConfigs: true,
+				AdditionalArgs:      []string{testControllerID},
+			})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		for _, f := range finalizers {
+			testCtx.AddFinalizerFn(f)
+		}
+
+		testFuncs := map[string]func(t *testing.T){
+			"PrometheusServer": testMultipleOperatorsPrometheusServer,
+			"PrometheusAgent":  testMultipleOperatorsPrometheusAgent,
+			"AlertManager":     testMultipleOperatorsAlertManager,
+			"ThanosRuler":      testMultipleOperatorsThanosRuler,
+		}
+		for name, f := range testFuncs {
+			t.Run(name, f)
 		}
 	}
 }

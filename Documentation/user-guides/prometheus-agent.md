@@ -26,7 +26,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.68.0
+    app.kubernetes.io/version: 0.73.2
   name: prometheus-operator
 rules:
 - apiGroups:
@@ -99,6 +99,13 @@ rules:
   - list
   - watch
 - apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - patch
+  - create
+- apiGroups:
   - networking.k8s.io
   resources:
   - ingresses
@@ -106,6 +113,12 @@ rules:
   - get
   - list
   - watch
+- apiGroups:
+  - storage.k8s.io
+  resources:
+  - storageclasses
+  verbs:
+  - get
 ```
 
 Similarly to Prometheus, Prometheus Agent will also require permission to scrape targets. Because of this, we will create a new service account for the Agent with the necessary permissions to scrape targets.
@@ -174,4 +187,4 @@ spec:
       team: frontend
 ```
 
-Continue with the [Getting Started page](getting-started.md) to learn how to monitor applications running on Kubernetes.
+Continue with the [Getting Started page]({{<ref "getting-started">}}) to learn how to monitor applications running on Kubernetes.

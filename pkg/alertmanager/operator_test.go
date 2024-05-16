@@ -24,6 +24,7 @@ import (
 	"github.com/go-kit/log/level"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
+	authv1 "k8s.io/api/authorization/v1"
 	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
@@ -167,12 +168,12 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			a1Hash, err := createSSetInputHash(tc.a, Config{}, nil, appsv1.StatefulSetSpec{})
+			a1Hash, err := createSSetInputHash(tc.a, Config{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{})
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			a2Hash, err := createSSetInputHash(tc.b, Config{}, nil, appsv1.StatefulSetSpec{})
+			a2Hash, err := createSSetInputHash(tc.b, Config{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -188,7 +189,7 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				t.Fatal("expected two Alertmanager CRDs to produce the same hash but got different hash")
 			}
 
-			a2Hash, err = createSSetInputHash(tc.a, Config{}, nil, appsv1.StatefulSetSpec{Replicas: ptr.To(int32(2))})
+			a2Hash, err = createSSetInputHash(tc.a, Config{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{Replicas: ptr.To(int32(2))})
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -204,7 +205,7 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 // and validate that semantic validation is in place for all the fields in the
 // AlertmanagerConfig CR. The validation is preformed by the operator
 // after selecting AlertmanagerConfig resources but before passing them to
-// addAlertmanagerConfigs
+// addAlertmanagerConfigs.
 func TestCheckAlertmanagerConfig(t *testing.T) {
 	version, err := semver.ParseTolerant(operator.DefaultAlertmanagerVersion)
 	if err != nil {
@@ -1233,13 +1234,26 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 			c := fake.NewSimpleClientset(tc.objects...)
 
 			o := &Operator{
-				kclient: c,
-				mclient: monitoringfake.NewSimpleClientset(),
-				logger:  level.NewFilter(log.NewLogfmtLogger(os.Stderr), level.AllowInfo()),
-				metrics: operator.NewMetrics(prometheus.NewRegistry()),
+				kclient:    c,
+				mclient:    monitoringfake.NewSimpleClientset(),
+				ssarClient: &alwaysAllowed{},
+				logger:     level.NewFilter(log.NewLogfmtLogger(os.Stdout), level.AllowInfo()),
+				metrics:    operator.NewMetrics(prometheus.NewRegistry()),
 			}
 
-			err := o.bootstrap(context.Background())
+			err := o.bootstrap(
+				context.Background(),
+				operator.Config{
+					Namespaces: operator.Namespaces{
+						AlertmanagerConfigAllowList: map[string]struct{}{
+							v1.NamespaceAll: {},
+						},
+						AlertmanagerAllowList: map[string]struct{}{
+							"foo": {},
+						},
+					},
+				},
+			)
 			if err != nil {
 				t.Fatalf("unexpected error: %v", err)
 			}
@@ -1274,4 +1288,15 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 			}
 		})
 	}
+}
+
+// alwaysAllowed implements SelfSubjectAccessReviewInterface.
+type alwaysAllowed struct{}
+
+func (*alwaysAllowed) Create(_ context.Context, _ *authv1.SelfSubjectAccessReview, _ metav1.CreateOptions) (*authv1.SelfSubjectAccessReview, error) {
+	return &authv1.SelfSubjectAccessReview{
+		Status: authv1.SubjectAccessReviewStatus{
+			Allowed: true,
+		},
+	}, nil
 }
