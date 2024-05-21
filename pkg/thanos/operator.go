@@ -116,9 +116,6 @@ func New(ctx context.Context, restConfig *rest.Config, c operator.Config, logger
 	// All the metrics exposed by the controller get the controller="thanos" label.
 	r = prometheus.WrapRegistererWith(prometheus.Labels{"controller": "thanos"}, r)
 
-	// All the metrics exposed by the controller get the controller="thanos" label.
-	r = prometheus.WrapRegistererWith(prometheus.Labels{"controller": "thanos"}, r)
-
 	o := &Operator{
 		kclient:             client,
 		mdClient:            mdClient,

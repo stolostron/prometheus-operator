@@ -590,10 +590,6 @@ func (c *Operator) sync(ctx context.Context, key string) error {
 		return fmt.Errorf("synchronizing web config secret failed: %w", err)
 	}
 
-	if err := c.createOrUpdateWebConfigSecret(ctx, am); err != nil {
-		return fmt.Errorf("synchronizing web config secret failed")
-	}
-
 	// Create governing service if it doesn't exist.
 	svcClient := c.kclient.CoreV1().Services(am.Namespace)
 	if err = k8sutil.CreateOrUpdateService(ctx, svcClient, makeStatefulSetService(am, c.config)); err != nil {

@@ -106,22 +106,6 @@ func validateReceivers(receivers []monitoringv1alpha1.Receiver) (map[string]stru
 		if err := validateMSTeamsConfigs(receiver.MSTeamsConfigs); err != nil {
 			return nil, fmt.Errorf("failed to validate 'msteamsConfig' - receiver %s: %w", receiver.Name, err)
 		}
-
-		if err := validateSnsConfigs(receiver.SNSConfigs); err != nil {
-			return nil, fmt.Errorf("failed to validate 'snsConfig' - receiver %s", receiver.Name)
-		}
-
-		if err := validateTelegramConfigs(receiver.TelegramConfigs); err != nil {
-			return nil, fmt.Errorf("failed to validate 'telegramConfig' - receiver %s", receiver.Name)
-		}
-
-		if err := validateWebexConfigs(receiver.WebexConfigs); err != nil {
-			return nil, fmt.Errorf("failed to validate 'webexConfig' - receiver %s", receiver.Name)
-		}
-
-		if err := validateDiscordConfigs(receiver.DiscordConfigs); err != nil {
-			return nil, fmt.Errorf("failed to validate 'discordConfig' - receiver %s", receiver.Name)
-		}
 	}
 
 	return receiverNames, nil
@@ -356,10 +340,6 @@ func validateMSTeamsConfigs(configs []monitoringv1alpha1.MSTeamsConfig) error {
 		if err := config.HTTPConfig.Validate(); err != nil {
 			return err
 		}
-
-		if err := config.HTTPConfig.Validate(); err != nil {
-			return err
-		}
 	}
 
 	return nil
@@ -399,12 +379,6 @@ func validateAlertManagerRoutes(r *monitoringv1alpha1.Route, receivers, muteTime
 	for _, namedMuteTimeInterval := range r.MuteTimeIntervals {
 		if _, found := muteTimeIntervals[namedMuteTimeInterval]; !found {
 			return fmt.Errorf("mute time interval %q not found", namedMuteTimeInterval)
-		}
-	}
-
-	for _, namedActiveTimeInterval := range r.ActiveTimeIntervals {
-		if _, found := muteTimeIntervals[namedActiveTimeInterval]; !found {
-			return fmt.Errorf("time interval %q not found", namedActiveTimeInterval)
 		}
 	}
 

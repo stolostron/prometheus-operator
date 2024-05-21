@@ -15,13 +15,13 @@ RUN curl -Lso - https://github.com/google/jsonnet/archive/${JSONNET_VERSION}.tar
     make && mv jsonnetfmt /usr/local/bin && \
     rm -rf /tmp/jsonnet-${JSONNET_VERSION#v}
 
-RUN GO111MODULE=on go install github.com/google/go-jsonnet/cmd/jsonnet@${JSONNET_VERSION}
-RUN GO111MODULE=on go install github.com/prometheus/prometheus/cmd/promtool@${PROMTOOL_VERSION}
-RUN GO111MODULE=on go install github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCILINT_VERSION}
-RUN GO111MODULE=on go install github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@${JB_VERSION}
-RUN go install github.com/brancz/gojsontoyaml
-RUN go install github.com/campoy/embedmd
-RUN GO111MODULE=on go install github.com/go-bindata/go-bindata/v3/go-bindata@${GO_BINDATA_VERSION}
+RUN GO111MODULE=on go get github.com/google/go-jsonnet/cmd/jsonnet@${JSONNET_VERSION}
+RUN GO111MODULE=on go get github.com/prometheus/prometheus/cmd/promtool@${PROMTOOL_VERSION}
+RUN GO111MODULE=on go get github.com/golangci/golangci-lint/cmd/golangci-lint@${GOLANGCILINT_VERSION}
+RUN GO111MODULE=on go get github.com/jsonnet-bundler/jsonnet-bundler/cmd/jb@${JB_VERSION}
+RUN go get github.com/brancz/gojsontoyaml
+RUN go get github.com/campoy/embedmd
+RUN GO111MODULE=on go get github.com/go-bindata/go-bindata/v3/go-bindata@${GO_BINDATA_VERSION}
 
 # Add po-lint
 WORKDIR /go/src/github.com/prometheus-operator/prometheus-operator

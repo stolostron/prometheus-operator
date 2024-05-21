@@ -258,37 +258,6 @@ func (prwtc PromRemoteWriteTestConfig) AddRemoteWriteWithTLSToPrometheus(p *moni
 			}
 		}
 	}
-}
-
-func (f *Framework) AddRemoteReceiveWithWebTLSToPrometheus(p *monitoringv1.Prometheus, prwtc PromRemoteWriteTestConfig) {
-	p.Spec.EnableFeatures = []string{"remote-write-receiver"}
-
-	p.Spec.Web = &monitoringv1.PrometheusWebSpec{}
-	p.Spec.Web.TLSConfig = &monitoringv1.WebTLSConfig{
-		ClientCA: monitoringv1.SecretOrConfigMap{
-			Secret: &v1.SecretKeySelector{
-				LocalObjectReference: v1.LocalObjectReference{
-					Name: "server-tls-ca",
-				},
-				Key: "ca.pem",
-			},
-		},
-		Cert: monitoringv1.SecretOrConfigMap{
-			Secret: &v1.SecretKeySelector{
-				LocalObjectReference: v1.LocalObjectReference{
-					Name: "server-tls",
-				},
-				Key: "cert.pem",
-			},
-		},
-		KeySecret: v1.SecretKeySelector{
-			LocalObjectReference: v1.LocalObjectReference{
-				Name: "server-tls",
-			},
-			Key: "key.pem",
-		},
-		ClientAuthType: "VerifyClientCertIfGiven",
-	}
 
 	switch {
 	case prwtc.CA.ResourceName != "":

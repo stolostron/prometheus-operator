@@ -82,7 +82,7 @@ GO_BUILD_LDFLAGS=\
 GO_BUILD_RECIPE=\
 	GOOS=$(GOOS) \
 	GOARCH=$(GOARCH) \
-	CGO_ENABLED=1 \
+	CGO_ENABLED=0 \
 	go build -ldflags="$(GO_BUILD_LDFLAGS)"
 
 pkgs = $(shell go list ./... | grep -v /test/ | grep -v /contrib/)
@@ -198,8 +198,8 @@ update-go-deps:
 	for m in $$(go list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		go get -d $$m; \
 	done
-	(cd pkg/client && go install -u ./...)
-	(cd pkg/apis/monitoring && go install -u ./...)
+	(cd pkg/client && go get -u ./...)
+	(cd pkg/apis/monitoring && go get -u ./...)
 	@echo "Don't forget to run 'make tidy'"
 
 ##############
@@ -406,7 +406,7 @@ $(TOOLING): $(TOOLS_BIN_DIR)
 # INFORMER_GEN_BINARY=/home/user/go/bin/informer-gen
 #
 # /home/user/go/bin/informer-gen:
-#	go install -u -d k8s.io/code-generator/cmd/informer-gen
+#	go get -u -d k8s.io/code-generator/cmd/informer-gen
 #	cd /home/user/go/src/k8s.io/code-generator; git checkout release-1.14
 #	go install k8s.io/code-generator/cmd/informer-gen
 #
