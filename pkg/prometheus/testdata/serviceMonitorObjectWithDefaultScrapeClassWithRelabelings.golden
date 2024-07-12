@@ -63,8 +63,8 @@ scrape_configs:
   - target_label: endpoint
     replacement: web
   - source_labels:
-    - __meta_kubernetes_pod_node_name
-    target_label: node
+    - __meta_kubernetes_pod_app_name
+    target_label: app
     action: replace
   - source_labels:
     - __address__
@@ -75,4 +75,3 @@ scrape_configs:
     - __tmp_hash
     regex: $(SHARD)
     action: keep
-  metric_relabel_configs: []
