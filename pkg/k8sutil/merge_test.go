@@ -113,9 +113,47 @@ func TestPodLabelsAnnotations(t *testing.T) {
 	for _, tc := range testCases {
 		result, err := MergePatchContainers(tc.base, tc.patches)
 		require.NoError(t, err)
-		if diff := pretty.Compare(result, tc.result); diff != "" {
-			t.Fatalf("Test %s: patch result did not match. diff: %s.", tc.name, diff)
+		diff := pretty.Compare(result, tc.result)
+		require.Equal(t, "", diff, "Test %s: patch result did not match. diff: %s.", tc.name, diff)
+	}
+}
+
+func TestMergePatchContainersOrderPreserved(t *testing.T) {
+	build := func(name, image string) v1.Container {
+		return v1.Container{
+			Name:  name,
+			Image: image,
 		}
+	}
+
+	for i := 0; i < 10; i++ {
+		result, err := MergePatchContainers(
+			[]v1.Container{
+				build("c1", "image:base"),
+				build("c2", "image:base"),
+			},
+			[]v1.Container{
+				build("c1", "image:A"),
+				build("c3", "image:B"),
+				build("c4", "image:C"),
+				build("c5", "image:D"),
+				build("c6", "image:E"),
+			},
+		)
+		require.NoError(t, err)
+
+		diff := pretty.Compare(
+			result,
+			[]v1.Container{
+				build("c1", "image:A"),
+				build("c2", "image:base"),
+				build("c3", "image:B"),
+				build("c4", "image:C"),
+				build("c5", "image:D"),
+				build("c6", "image:E"),
+			},
+		)
+		require.Equal(t, "", diff, "patch result did not match. diff:\n%s", diff)
 	}
 }
 

@@ -479,9 +479,9 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 		return err
 	}
 
-	assetStore := assets.NewStore(o.kclient.CoreV1(), o.kclient.CoreV1())
+	assetStore := assets.NewStoreBuilder(o.kclient.CoreV1(), o.kclient.CoreV1())
 
-	tlsAssets, err := operator.ReconcileShardedSecretForTLSAssets(ctx, assetStore, o.kclient, newTLSAssetSecret(tr, o.config))
+	tlsAssets, err := operator.ReconcileShardedSecret(ctx, assetStore.TLSAssets(), o.kclient, newTLSAssetSecret(tr, o.config))
 	if err != nil {
 		return fmt.Errorf("failed to reconcile the TLS secrets: %w", err)
 	}

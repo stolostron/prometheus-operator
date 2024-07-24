@@ -78,12 +78,11 @@ func TestShardedSecret(t *testing.T) {
 					Name: namePrefix,
 				},
 			}
-			s := NewShardedSecret(template)
-			for k, v := range tc.input {
-				b := &strings.Builder{}
-				b.WriteString(k)
-				s.Append(b, bytes.NewBuffer(v))
+			s := &ShardedSecret{
+				template: template,
+				data:     tc.input,
 			}
+
 			secrets := s.shard()
 			if len(secrets) != tc.expectShards {
 				t.Errorf("sharding failed: got %d shards; want %d", len(secrets), tc.expectShards)
