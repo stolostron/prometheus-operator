@@ -214,30 +214,6 @@ func (s *StoreBuilder) AddAzureOAuth(ctx context.Context, ns string, azureAD *mo
 	return nil
 }
 
-// AddAzureOAuth processes the AzureOAuth SecretKeySelectors and adds the AzureOAuth data to the store.
-func (s *Store) AddAzureOAuth(ctx context.Context, ns string, azureAD *monitoringv1.AzureAD, key string) error {
-	if azureAD == nil {
-		return nil
-	}
-
-	azureOAuth := azureAD.OAuth
-	if azureOAuth == nil {
-		return nil
-	}
-
-	azureOAuthCredentials := AzureOAuthCredentials{}
-
-	clientSecret, err := s.GetSecretKey(ctx, ns, azureOAuth.ClientSecret)
-	if err != nil {
-		return fmt.Errorf("failed to read AzureOAuth clientSecret: %w", err)
-	}
-	azureOAuthCredentials.ClientSecret = clientSecret
-
-	s.AzureOAuthAssets[key] = azureOAuthCredentials
-
-	return nil
-}
-
 // GetKey processes the given SecretOrConfigMap selector and returns the referenced data.
 func (s *StoreBuilder) GetKey(ctx context.Context, namespace string, sel monitoringv1.SecretOrConfigMap) (string, error) {
 	switch {
