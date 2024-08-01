@@ -1,6 +1,5 @@
-# Security Response
+# Security
 
-If you've found a security issue that you'd like to disclose confidentially please contact Red Hat's Product Security team.
-Details at https://access.redhat.com/security/team/contact
-
-Build Date: Tue Jan 16 06:21:45 EST 2024
+If you find a security vulnerability related to the Prometheus Operator, please
+do not report it by opening a GitHub issue, but instead please send an e-mail to
+the maintainers of the project found in the [MAINTAINERS.md](MAINTAINERS.md) file.

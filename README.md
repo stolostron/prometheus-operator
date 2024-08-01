@@ -181,5 +181,3 @@ common issues and frequently asked questions (FAQ).
 ## Acknowledgements
 
 prometheus-operator organization logo was created and contributed by [Bianca Cheng Costanzo](https://github.com/bia).
-
-Rebuild Image: Wed Sep 7 14:48:45 EDT 2022

@@ -3016,10 +3016,6 @@
                     "description": "Enable Prometheus to be used as a receiver for the Prometheus remote\nwrite protocol.\n\n\nWARNING: This is not considered an efficient way of ingesting samples.\nUse it with caution for specific low-volume use cases.\nIt is not suitable for replacing the ingestion via scraping and turning\nPrometheus into a push-based metrics collection system.\nFor more information see https://prometheus.io/docs/prometheus/latest/querying/api/#remote-write-receiver\n\n\nIt requires Prometheus >= v2.33.0.",
                     "type": "boolean"
                   },
-                  "enableRemoteWriteReceiver": {
-                    "description": "Enable Prometheus to be used as a receiver for the Prometheus remote write protocol. \n WARNING: This is not considered an efficient way of ingesting samples. Use it with caution for specific low-volume use cases. It is not suitable for replacing the ingestion via scraping and turning Prometheus into a push-based metrics collection system. For more information see https://prometheus.io/docs/prometheus/latest/querying/api/#remote-write-receiver \n It requires Prometheus >= v2.33.0.",
-                    "type": "boolean"
-                  },
                   "enforcedBodySizeLimit": {
                     "description": "When defined, enforcedBodySizeLimit specifies a global limit on the size\nof uncompressed response body that will be accepted by Prometheus.\nTargets responding with a body larger than this many bytes will cause\nthe scrape to fail.\n\n\nIt requires Prometheus >= v2.28.0.\n\n\nWhen both `enforcedBodySizeLimit` and `bodySizeLimit` are defined and greater than zero, the following rules apply:\n* Scrape objects without a defined bodySizeLimit value will inherit the global bodySizeLimit value (Prometheus >= 2.45.0) or the enforcedBodySizeLimit value (Prometheus < v2.45.0).\n  If Prometheus version is >= 2.45.0 and the `enforcedBodySizeLimit` is greater than the `bodySizeLimit`, the `bodySizeLimit` will be set to `enforcedBodySizeLimit`.\n* Scrape objects with a bodySizeLimit value less than or equal to enforcedBodySizeLimit keep their specific value.\n* Scrape objects with a bodySizeLimit value greater than enforcedBodySizeLimit are set to enforcedBodySizeLimit.",
                     "pattern": "(^0|([0-9]*[.])?[0-9]+((K|M|G|T|E|P)i?)?B)$",
@@ -7317,15 +7313,6 @@
                                 "type": "object",
                                 "x-kubernetes-map-type": "granular"
                               },
-                              "allocatedResourceStatuses": {
-                                "additionalProperties": {
-                                  "description": "When a controller receives persistentvolume claim update with ClaimResourceStatus for a resource that it does not recognizes, then it should ignore that update and let other controllers handle it.",
-                                  "type": "string"
-                                },
-                                "description": "allocatedResourceStatuses stores status of resource being resized for the given PVC. Key names follow standard Kubernetes label syntax. Valid values are either: * Un-prefixed keys: - storage - the capacity of the volume. * Custom resources must use implementation-defined prefixed names such as \"example.com/my-custom-resource\" Apart from above values - keys that are unprefixed or have kubernetes.io prefix are considered reserved and hence may not be used. \n ClaimResourceStatus can be in any of following states: - ControllerResizeInProgress: State set when resize controller starts resizing the volume in control-plane. - ControllerResizeFailed: State set when resize has failed in resize controller with a terminal error. - NodeResizePending: State set when resize controller has finished resizing the volume but further resizing of volume is needed on the node. - NodeResizeInProgress: State set when kubelet starts resizing the volume. - NodeResizeFailed: State set when resizing has failed in kubelet with a terminal error. Transient errors don't set NodeResizeFailed. For example: if expanding a PVC for more capacity - this field can be one of the following states: - pvc.status.allocatedResourceStatus['storage'] = \"ControllerResizeInProgress\" - pvc.status.allocatedResourceStatus['storage'] = \"ControllerResizeFailed\" - pvc.status.allocatedResourceStatus['storage'] = \"NodeResizePending\" - pvc.status.allocatedResourceStatus['storage'] = \"NodeResizeInProgress\" - pvc.status.allocatedResourceStatus['storage'] = \"NodeResizeFailed\" When this field is not set, it means that no resize operation is in progress for the given PVC. \n A controller that receives PVC update with previously unknown resourceName or ClaimResourceStatus should ignore the update for the purpose it was designed. For example - a controller that only is responsible for resizing capacity of the volume, should ignore PVC updates that change other valid resources associated with PVC. \n This is an alpha field and requires enabling RecoverVolumeExpansionFailure feature.",
-                                "type": "object",
-                                "x-kubernetes-map-type": "granular"
-                              },
                               "allocatedResources": {
                                 "additionalProperties": {
                                   "anyOf": [
@@ -9989,59 +9976,6 @@
                         },
                         "updatedReplicas": {
                           "description": "Total number of non-terminated pods targeted by this shard\nthat have the desired spec.",
-                          "format": "int32",
-                          "type": "integer"
-                        }
-                      },
-                      "required": [
-                        "availableReplicas",
-                        "replicas",
-                        "shardID",
-                        "unavailableReplicas",
-                        "updatedReplicas"
-                      ],
-                      "type": "object"
-                    },
-                    "type": "array",
-                    "x-kubernetes-list-map-keys": [
-                      "shardID"
-                    ],
-                    "x-kubernetes-list-type": "map"
-                  },
-                  "shards": {
-                    "description": "Shards is the most recently observed number of shards.",
-                    "format": "int32",
-                    "type": "integer"
-                  },
-                  "selector": {
-                    "description": "The selector used to match the pods targeted by this Prometheus resource.",
-                    "type": "string"
-                  },
-                  "shardStatuses": {
-                    "description": "The list has one entry per shard. Each entry provides a summary of the shard status.",
-                    "items": {
-                      "properties": {
-                        "availableReplicas": {
-                          "description": "Total number of available pods (ready for at least minReadySeconds) targeted by this shard.",
-                          "format": "int32",
-                          "type": "integer"
-                        },
-                        "replicas": {
-                          "description": "Total number of pods targeted by this shard.",
-                          "format": "int32",
-                          "type": "integer"
-                        },
-                        "shardID": {
-                          "description": "Identifier of the shard.",
-                          "type": "string"
-                        },
-                        "unavailableReplicas": {
-                          "description": "Total number of unavailable pods targeted by this shard.",
-                          "format": "int32",
-                          "type": "integer"
-                        },
-                        "updatedReplicas": {
-                          "description": "Total number of non-terminated pods targeted by this shard that have the desired spec.",
                           "format": "int32",
                           "type": "integer"
                         }

@@ -1802,11 +1802,6 @@ func (cg *ConfigGenerator) generateK8SSDConfig(
 			{Key: "node", Value: attachMetadataConfig.AttachMetadata.Node},
 		})
 	}
-	if attachMetadataConfig != nil {
-		k8sSDConfig = cg.WithMinimumVersion(attachMetadataConfig.MinimumVersion).AppendMapItem(k8sSDConfig, "attach_metadata", yaml.MapSlice{
-			{Key: "node", Value: attachMetadataConfig.AttachMetadata.Node},
-		})
-	}
 
 	return yaml.MapItem{
 		Key: "kubernetes_sd_configs",
@@ -2003,14 +1998,6 @@ func (cg *ConfigGenerator) generateRemoteReadConfig(
 		cfg = cg.addAuthorizationToYaml(cfg, s, spec.Authorization)
 
 		cfg = cg.addProxyConfigtoYaml(cfg, s, spec.ProxyConfig)
-
-		if spec.FollowRedirects != nil {
-			cfg = cg.WithMinimumVersion("2.26.0").AppendMapItem(cfg, "follow_redirects", spec.FollowRedirects)
-		}
-
-		if spec.FilterExternalLabels != nil {
-			cfg = cg.WithMinimumVersion("2.34.0").AppendMapItem(cfg, "filter_external_labels", spec.FilterExternalLabels)
-		}
 
 		if spec.FollowRedirects != nil {
 			cfg = cg.WithMinimumVersion("2.26.0").AppendMapItem(cfg, "follow_redirects", spec.FollowRedirects)

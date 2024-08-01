@@ -3859,7 +3859,6 @@ spec:
                   - hostnames
                   - ip
                   type: object
-                  x-kubernetes-map-type: atomic
                 type: array
                 x-kubernetes-list-map-keys:
                 - ip
@@ -12321,52 +12320,6 @@ spec:
                       description: |-
                         Total number of non-terminated pods targeted by this shard
                         that have the desired spec.
-                      format: int32
-                      type: integer
-                  required:
-                  - availableReplicas
-                  - replicas
-                  - shardID
-                  - unavailableReplicas
-                  - updatedReplicas
-                  type: object
-                type: array
-                x-kubernetes-list-map-keys:
-                - shardID
-                x-kubernetes-list-type: map
-              shards:
-                description: Shards is the most recently observed number of shards.
-                format: int32
-                type: integer
-              selector:
-                description: The selector used to match the pods targeted by this
-                  Prometheus resource.
-                type: string
-              shardStatuses:
-                description: The list has one entry per shard. Each entry provides
-                  a summary of the shard status.
-                items:
-                  properties:
-                    availableReplicas:
-                      description: Total number of available pods (ready for at least
-                        minReadySeconds) targeted by this shard.
-                      format: int32
-                      type: integer
-                    replicas:
-                      description: Total number of pods targeted by this shard.
-                      format: int32
-                      type: integer
-                    shardID:
-                      description: Identifier of the shard.
-                      type: string
-                    unavailableReplicas:
-                      description: Total number of unavailable pods targeted by this
-                        shard.
-                      format: int32
-                      type: integer
-                    updatedReplicas:
-                      description: Total number of non-terminated pods targeted by
-                        this shard that have the desired spec.
                       format: int32
                       type: integer
                   required:

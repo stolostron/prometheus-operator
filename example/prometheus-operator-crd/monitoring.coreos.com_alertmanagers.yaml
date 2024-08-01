@@ -3325,7 +3325,6 @@ spec:
                   - hostnames
                   - ip
                   type: object
-                  x-kubernetes-map-type: atomic
                 type: array
                 x-kubernetes-list-map-keys:
                 - ip
