@@ -12,9 +12,9 @@ metadata:
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: release-acm-211
-    appstudio.openshift.io/component: prometheus-operator-acm-211
+    appstudio.openshift.io/component: prometheus-config-reloader-acm-211
     pipelines.appstudio.openshift.io/type: build
-  name: prometheus-operator-acm-211-on-pull-request
+  name: prometheus-config-reloader-acm-211-on-pull-request
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -23,11 +23,11 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/release-acm-211/prometheus-operator-acm-211:on-pr-{{revision}}
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/release-acm-211/prometheus-config-reloader-acm-211:on-pr-{{revision}}
   - name: image-expires-after
     value: 5d
   - name: dockerfile
-    value: Containerfile.operator
+    value: cmd/prometheus-config-reloader/Containerfile.operator
   - name: path-context
     value: .
   pipelineSpec:
@@ -254,6 +254,8 @@ spec:
       params:
       - name: BINARY_IMAGE
         value: $(params.output-image)
+      - name: BASE_IMAGES
+        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       runAfter:
       - build-container
       taskRef:
@@ -279,6 +281,8 @@ spec:
         workspace: workspace
     - name: deprecated-base-image-check
       params:
+      - name: BASE_IMAGES_DIGESTS
+        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       - name: IMAGE_URL
         value: $(tasks.build-container.results.IMAGE_URL)
       - name: IMAGE_DIGEST

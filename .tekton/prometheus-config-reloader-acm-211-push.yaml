@@ -4,17 +4,16 @@ metadata:
   annotations:
     build.appstudio.openshift.io/repo: https://github.com/stolostron/prometheus-operator?rev={{revision}}
     build.appstudio.redhat.com/commit_sha: '{{revision}}'
-    build.appstudio.redhat.com/pull_request_number: '{{pull_request_number}}'
     build.appstudio.redhat.com/target_branch: '{{target_branch}}'
     pipelinesascode.tekton.dev/max-keep-runs: "3"
-    pipelinesascode.tekton.dev/on-cel-expression: event == "pull_request" && target_branch
+    pipelinesascode.tekton.dev/on-cel-expression: event == "push" && target_branch
       == "release-2.11"
   creationTimestamp: null
   labels:
     appstudio.openshift.io/application: release-acm-211
-    appstudio.openshift.io/component: prometheus-operator-acm-211
+    appstudio.openshift.io/component: prometheus-config-reloader-acm-211
     pipelines.appstudio.openshift.io/type: build
-  name: prometheus-operator-acm-211-on-pull-request
+  name: prometheus-config-reloader-acm-211-on-push
   namespace: crt-redhat-acm-tenant
 spec:
   params:
@@ -23,11 +22,9 @@ spec:
   - name: revision
     value: '{{revision}}'
   - name: output-image
-    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/release-acm-211/prometheus-operator-acm-211:on-pr-{{revision}}
-  - name: image-expires-after
-    value: 5d
+    value: quay.io/redhat-user-workloads/crt-redhat-acm-tenant/release-acm-211/prometheus-config-reloader-acm-211:{{revision}}
   - name: dockerfile
-    value: Containerfile.operator
+    value: cmd/prometheus-config-reloader/Containerfile.operator
   - name: path-context
     value: .
   pipelineSpec:
@@ -254,6 +251,8 @@ spec:
       params:
       - name: BINARY_IMAGE
         value: $(params.output-image)
+      - name: BASE_IMAGES
+        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       runAfter:
       - build-container
       taskRef:
@@ -279,6 +278,8 @@ spec:
         workspace: workspace
     - name: deprecated-base-image-check
       params:
+      - name: BASE_IMAGES_DIGESTS
+        value: $(tasks.build-container.results.BASE_IMAGES_DIGESTS)
       - name: IMAGE_URL
         value: $(tasks.build-container.results.IMAGE_URL)
       - name: IMAGE_DIGEST
