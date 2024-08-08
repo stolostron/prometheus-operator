@@ -6,6 +6,7 @@ FROM brew.registry.redhat.io/rh-osbs/openshift-golang-builder:rhel_9_1.21 AS bui
 WORKDIR /workspace
 COPY . .
 
+RUN go mod vendor
 RUN GOOS=linux GOARCH=amd64 CGO_ENABLED=1 go build -o prometheus-config-reloader cmd/prometheus-config-reloader/main.go
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
