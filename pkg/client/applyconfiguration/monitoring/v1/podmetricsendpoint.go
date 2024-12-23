@@ -22,10 +22,11 @@ import (
 	intstr "k8s.io/apimachinery/pkg/util/intstr"
 )
 
-// PodMetricsEndpointApplyConfiguration represents an declarative configuration of the PodMetricsEndpoint type for use
+// PodMetricsEndpointApplyConfiguration represents a declarative configuration of the PodMetricsEndpoint type for use
 // with apply.
 type PodMetricsEndpointApplyConfiguration struct {
 	Port                     *string                              `json:"port,omitempty"`
+	PortNumber               *int32                               `json:"portNumber,omitempty"`
 	TargetPort               *intstr.IntOrString                  `json:"targetPort,omitempty"`
 	Path                     *string                              `json:"path,omitempty"`
 	Scheme                   *string                              `json:"scheme,omitempty"`
@@ -48,7 +49,7 @@ type PodMetricsEndpointApplyConfiguration struct {
 	FilterRunning            *bool                                `json:"filterRunning,omitempty"`
 }
 
-// PodMetricsEndpointApplyConfiguration constructs an declarative configuration of the PodMetricsEndpoint type for use with
+// PodMetricsEndpointApplyConfiguration constructs a declarative configuration of the PodMetricsEndpoint type for use with
 // apply.
 func PodMetricsEndpoint() *PodMetricsEndpointApplyConfiguration {
 	return &PodMetricsEndpointApplyConfiguration{}
@@ -59,6 +60,14 @@ func PodMetricsEndpoint() *PodMetricsEndpointApplyConfiguration {
 // If called multiple times, the Port field is set to the value of the last call.
 func (b *PodMetricsEndpointApplyConfiguration) WithPort(value string) *PodMetricsEndpointApplyConfiguration {
 	b.Port = &value
+	return b
+}
+
+// WithPortNumber sets the PortNumber field in the declarative configuration to the given value
+// and returns the receiver, so that objects can be built by chaining "With" function invocations.
+// If called multiple times, the PortNumber field is set to the value of the last call.
+func (b *PodMetricsEndpointApplyConfiguration) WithPortNumber(value int32) *PodMetricsEndpointApplyConfiguration {
+	b.PortNumber = &value
 	return b
 }
 

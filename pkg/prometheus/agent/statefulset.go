@@ -16,13 +16,10 @@ package prometheusagent
 
 import (
 	"fmt"
-	"strings"
 
-	"golang.org/x/exp/slices"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -39,8 +36,8 @@ const (
 
 func makeStatefulSet(
 	name string,
-	p monitoringv1.PrometheusInterface,
-	config *prompkg.Config,
+	p *monitoringv1alpha1.PrometheusAgent,
+	config prompkg.Config,
 	cg *prompkg.ConfigGenerator,
 	inputHash string,
 	shard int32,
@@ -63,23 +60,13 @@ func makeStatefulSet(
 		return nil, fmt.Errorf("make StatefulSet spec: %w", err)
 	}
 
-	annotations := map[string]string{
-		prompkg.SSetInputHashName: inputHash,
-	}
-
-	// do not transfer kubectl annotations to the statefulset so it is not
-	// pruned by kubectl
-	for key, value := range objMeta.GetAnnotations() {
-		if key != prompkg.SSetInputHashName && !strings.HasPrefix(key, "kubectl.kubernetes.io/") {
-			annotations[key] = value
-		}
-	}
 	statefulset := &appsv1.StatefulSet{Spec: *spec}
 
 	operator.UpdateObject(
 		statefulset,
 		operator.WithName(name),
-		operator.WithAnnotations(annotations),
+		operator.WithInputHashAnnotation(inputHash),
+		operator.WithAnnotations(objMeta.GetAnnotations()),
 		operator.WithAnnotations(config.Annotations),
 		operator.WithLabels(objMeta.GetLabels()),
 		operator.WithLabels(map[string]string{
@@ -89,36 +76,40 @@ func makeStatefulSet(
 		}),
 		operator.WithLabels(config.Labels),
 		operator.WithManagingOwner(p),
+		operator.WithoutKubectlAnnotations(),
 	)
 
-	if cpf.ImagePullSecrets != nil && len(cpf.ImagePullSecrets) > 0 {
+	if len(cpf.ImagePullSecrets) > 0 {
 		statefulset.Spec.Template.Spec.ImagePullSecrets = cpf.ImagePullSecrets
 	}
+
 	storageSpec := cpf.Storage
-	if storageSpec == nil {
+	switch {
+	case storageSpec == nil:
 		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, v1.Volume{
 			Name: prompkg.VolumeName(p),
 			VolumeSource: v1.VolumeSource{
 				EmptyDir: &v1.EmptyDirVolumeSource{},
 			},
 		})
-	} else if storageSpec.EmptyDir != nil {
-		emptyDir := storageSpec.EmptyDir
+
+	case storageSpec.EmptyDir != nil:
 		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, v1.Volume{
 			Name: prompkg.VolumeName(p),
 			VolumeSource: v1.VolumeSource{
-				EmptyDir: emptyDir,
+				EmptyDir: storageSpec.EmptyDir,
 			},
 		})
-	} else if storageSpec.Ephemeral != nil {
-		ephemeral := storageSpec.Ephemeral
+
+	case storageSpec.Ephemeral != nil:
 		statefulset.Spec.Template.Spec.Volumes = append(statefulset.Spec.Template.Spec.Volumes, v1.Volume{
 			Name: prompkg.VolumeName(p),
 			VolumeSource: v1.VolumeSource{
-				Ephemeral: ephemeral,
+				Ephemeral: storageSpec.Ephemeral,
 			},
 		})
-	} else {
+
+	default: // storageSpec.VolumeClaimTemplate
 		pvcTemplate := operator.MakeVolumeClaimTemplate(storageSpec.VolumeClaimTemplate)
 		if pvcTemplate.Name == "" {
 			pvcTemplate.Name = prompkg.VolumeName(p)
@@ -139,16 +130,12 @@ func makeStatefulSet(
 		statefulset.Spec.PersistentVolumeClaimRetentionPolicy = cpf.PersistentVolumeClaimRetentionPolicy
 	}
 
-	if cpf.HostNetwork {
-		statefulset.Spec.Template.Spec.DNSPolicy = v1.DNSClusterFirstWithHostNet
-	}
-
 	return statefulset, nil
 }
 
 func makeStatefulSetSpec(
-	p monitoringv1.PrometheusInterface,
-	c *prompkg.Config,
+	p *monitoringv1alpha1.PrometheusAgent,
+	c prompkg.Config,
 	cg *prompkg.ConfigGenerator,
 	shard int32,
 	tlsSecrets *operator.ShardedSecret,
@@ -158,18 +145,15 @@ func makeStatefulSetSpec(
 	pImagePath, err := operator.BuildImagePathForAgent(
 		ptr.Deref(cpf.Image, ""),
 		c.PrometheusDefaultBaseImage,
-		operator.StringValOrDefault(cpf.Version, operator.DefaultPrometheusVersion),
+		"v"+cg.Version().String(),
 	)
 	if err != nil {
 		return nil, err
 	}
 
-	if !slices.Contains(cpf.EnableFeatures, "agent") {
-		cpf.EnableFeatures = append(cpf.EnableFeatures, "agent")
-	}
-	promArgs := buildAgentArgs(cpf, cg)
+	promArgs := buildAgentArgs(cg, cpf.WALCompression)
 
-	volumes, promVolumeMounts, err := prompkg.BuildCommonVolumes(p, tlsSecrets)
+	volumes, promVolumeMounts, err := prompkg.BuildCommonVolumes(p, tlsSecrets, true)
 	if err != nil {
 		return nil, err
 	}
@@ -203,9 +187,9 @@ func makeStatefulSetSpec(
 		webConfigGenerator.Warn("web.config.file")
 	}
 
-	startupProbe, readinessProbe, livenessProbe := prompkg.MakeProbes(cpf, webConfigGenerator)
+	startupProbe, readinessProbe, livenessProbe := cg.BuildProbes()
 
-	podAnnotations, podLabels := prompkg.BuildPodMetadata(cpf, cg)
+	podAnnotations, podLabels := cg.BuildPodMetadata()
 	// In cases where an existing selector label is modified, or a new one is added, new sts cannot match existing pods.
 	// We should try to avoid removing such immutable fields whenever possible since doing
 	// so forces us to enter the 'recreate cycle' and can potentially lead to downtime.
@@ -246,7 +230,6 @@ func makeStatefulSetSpec(
 	}
 
 	containerArgs, err := operator.BuildArgs(promArgs, cpf.AdditionalArgs)
-
 	if err != nil {
 		return nil, err
 	}
@@ -288,6 +271,30 @@ func makeStatefulSetSpec(
 		return nil, fmt.Errorf("failed to merge containers spec: %w", err)
 	}
 
+	spec := v1.PodSpec{
+		ShareProcessNamespace:         prompkg.ShareProcessNamespace(p),
+		Containers:                    containers,
+		InitContainers:                initContainers,
+		SecurityContext:               cpf.SecurityContext,
+		ServiceAccountName:            cpf.ServiceAccountName,
+		AutomountServiceAccountToken:  ptr.To(ptr.Deref(cpf.AutomountServiceAccountToken, true)),
+		NodeSelector:                  cpf.NodeSelector,
+		PriorityClassName:             cpf.PriorityClassName,
+		TerminationGracePeriodSeconds: ptr.To(int64(600)),
+		Volumes:                       volumes,
+		Tolerations:                   cpf.Tolerations,
+		Affinity:                      cpf.Affinity,
+		TopologySpreadConstraints:     prompkg.MakeK8sTopologySpreadConstraint(finalSelectorLabels, cpf.TopologySpreadConstraints),
+		HostAliases:                   operator.MakeHostAliases(cpf.HostAliases),
+		HostNetwork:                   cpf.HostNetwork,
+	}
+
+	if cpf.HostNetwork {
+		spec.DNSPolicy = v1.DNSClusterFirstWithHostNet
+	}
+	k8sutil.UpdateDNSPolicy(&spec, cpf.DNSPolicy)
+	k8sutil.UpdateDNSConfig(&spec, cpf.DNSConfig)
+
 	// PodManagementPolicy is set to Parallel to mitigate issues in kubernetes: https://github.com/kubernetes/kubernetes/issues/60164
 	// This is also mentioned as one of limitations of StatefulSets: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
 	return &appsv1.StatefulSetSpec{
@@ -306,69 +313,21 @@ func makeStatefulSetSpec(
 				Labels:      finalLabels,
 				Annotations: podAnnotations,
 			},
-			Spec: v1.PodSpec{
-				ShareProcessNamespace:        prompkg.ShareProcessNamespace(p),
-				Containers:                   containers,
-				InitContainers:               initContainers,
-				SecurityContext:              cpf.SecurityContext,
-				ServiceAccountName:           cpf.ServiceAccountName,
-				AutomountServiceAccountToken: ptr.To(ptr.Deref(cpf.AutomountServiceAccountToken, true)),
-				NodeSelector:                 cpf.NodeSelector,
-				PriorityClassName:            cpf.PriorityClassName,
-				// Prometheus may take quite long to shut down to checkpoint existing data.
-				// Allow up to 10 minutes for clean termination.
-				TerminationGracePeriodSeconds: ptr.To(int64(600)),
-				Volumes:                       volumes,
-				Tolerations:                   cpf.Tolerations,
-				Affinity:                      cpf.Affinity,
-				TopologySpreadConstraints:     prompkg.MakeK8sTopologySpreadConstraint(finalSelectorLabels, cpf.TopologySpreadConstraints),
-				HostAliases:                   operator.MakeHostAliases(cpf.HostAliases),
-				HostNetwork:                   cpf.HostNetwork,
-			},
+			Spec: spec,
 		},
 	}, nil
 }
 
-func makeStatefulSetService(p *monitoringv1alpha1.PrometheusAgent, config prompkg.Config) *v1.Service {
-	p = p.DeepCopy()
+// buildAgentArgs returns the CLI arguments that are only valid for the Prometheus agent.
+func buildAgentArgs(cg *prompkg.ConfigGenerator, walCompression *bool) []monitoringv1.Argument {
+	promArgs := cg.BuildCommonPrometheusArgs()
 
-	if p.Spec.PortName == "" {
-		p.Spec.PortName = prompkg.DefaultPortName
+	switch cg.Version().Major {
+	case 2:
+		promArgs = append(promArgs, monitoringv1.Argument{Name: "enable-feature", Value: "agent"})
+	case 3:
+		promArgs = append(promArgs, monitoringv1.Argument{Name: "agent"})
 	}
-
-	svc := &v1.Service{
-		Spec: v1.ServiceSpec{
-			ClusterIP: "None",
-			Ports: []v1.ServicePort{
-				{
-					Name:       p.Spec.PortName,
-					Port:       9090,
-					TargetPort: intstr.FromString(p.Spec.PortName),
-				},
-			},
-			Selector: map[string]string{
-				"app.kubernetes.io/name": "prometheus-agent",
-			},
-		},
-	}
-
-	operator.UpdateObject(
-		svc,
-		operator.WithName(governingServiceName),
-		operator.WithAnnotations(config.Annotations),
-		operator.WithLabels(map[string]string{"operated-prometheus": "true"}),
-		operator.WithLabels(config.Labels),
-		operator.WithOwner(p),
-	)
-
-	return svc
-}
-
-// appendAgentArgs appends arguments that are only valid for the Prometheus agent.
-func appendAgentArgs(
-	promArgs []monitoringv1.Argument,
-	cg *prompkg.ConfigGenerator,
-	walCompression *bool) []monitoringv1.Argument {
 
 	promArgs = append(promArgs,
 		monitoringv1.Argument{Name: "storage.agent.path", Value: prompkg.StorageDir},
@@ -381,5 +340,6 @@ func appendAgentArgs(
 		}
 		promArgs = cg.AppendCommandlineArgument(promArgs, arg)
 	}
+
 	return promArgs
 }

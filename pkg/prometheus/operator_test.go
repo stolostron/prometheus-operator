@@ -17,6 +17,7 @@ package prometheus
 import (
 	"testing"
 
+	"github.com/stretchr/testify/require"
 	v1 "k8s.io/api/core/v1"
 	"k8s.io/utils/ptr"
 
@@ -47,9 +48,7 @@ func TestKeyToStatefulSetKey(t *testing.T) {
 
 	for _, c := range cases {
 		got := KeyToStatefulSetKey(c.p, c.name, c.shard)
-		if c.expected != got {
-			t.Fatalf("Expected key %q got %q", c.expected, got)
-		}
+		require.Equal(t, c.expected, got, "Expected key %q got %q", c.expected, got)
 	}
 }
 
@@ -196,13 +195,12 @@ func TestValidateRemoteWriteConfig(t *testing.T) {
 	for _, c := range cases {
 		test := c
 		t.Run(test.name, func(t *testing.T) {
-			err := ValidateRemoteWriteSpec(test.spec)
-			if err != nil && !test.expectErr {
-				t.Fatalf("unexpected error occurred: %v", err)
+			err := validateRemoteWriteSpec(test.spec)
+			if test.expectErr {
+				require.Error(t, err)
+				return
 			}
-			if err == nil && test.expectErr {
-				t.Fatalf("expected an error, got nil")
-			}
+			require.NoError(t, err)
 		})
 	}
 }
