@@ -207,10 +207,18 @@ type httpClientConfig struct {
 	OAuth2          *oauth2        `yaml:"oauth2,omitempty"`
 	BearerToken     string         `yaml:"bearer_token,omitempty"`
 	BearerTokenFile string         `yaml:"bearer_token_file,omitempty"`
-	ProxyURL        string         `yaml:"proxy_url,omitempty"`
 	TLSConfig       *tlsConfig     `yaml:"tls_config,omitempty"`
 	FollowRedirects *bool          `yaml:"follow_redirects,omitempty"`
 	EnableHTTP2     *bool          `yaml:"enable_http2,omitempty"`
+
+	proxyConfig `yaml:",inline"`
+}
+
+type proxyConfig struct {
+	ProxyURL             string              `yaml:"proxy_url,omitempty"`
+	NoProxy              string              `yaml:"no_proxy,omitempty"`
+	ProxyFromEnvironment bool                `yaml:"proxy_from_environment,omitempty"`
+	ProxyConnectHeader   map[string][]string `yaml:"proxy_connect_header,omitempty"`
 }
 
 type tlsConfig struct {
@@ -242,7 +250,7 @@ type oauth2 struct {
 	Scopes           []string          `yaml:"scopes,omitempty"`
 	TokenURL         string            `yaml:"token_url"`
 	EndpointParams   map[string]string `yaml:"endpoint_params,omitempty"`
-	ProxyURL         string            `yaml:"proxy_url,omitempty"`
+	proxyConfig      `yaml:",inline"`
 
 	TLSConfig *tlsConfig `yaml:"tls_config,omitempty"`
 }
@@ -345,6 +353,7 @@ type telegramConfig struct {
 	BotToken             string            `yaml:"bot_token,omitempty" json:"bot_token,omitempty"`
 	BotTokenFile         string            `yaml:"bot_token_file,omitempty" json:"bot_token_file,omitempty"`
 	ChatID               int64             `yaml:"chat_id,omitempty" json:"chat_id,omitempty"`
+	MessageThreadID      int               `yaml:"message_thread_id,omitempty" json:"message_thread_id,omitempty"`
 	Message              string            `yaml:"message,omitempty" json:"message,omitempty"`
 	DisableNotifications bool              `yaml:"disable_notifications,omitempty" json:"disable_notifications,omitempty"`
 	ParseMode            string            `yaml:"parse_mode,omitempty" json:"parse_mode,omitempty"`
@@ -385,8 +394,8 @@ func (d *duration) UnmarshalText(text []byte) error {
 	return err
 }
 
-func (d duration) MarshalText() ([]byte, error) {
-	return []byte(time.Duration(d).String()), nil
+func (d *duration) MarshalText() ([]byte, error) {
+	return []byte(time.Duration(*d).String()), nil
 }
 
 type victorOpsConfig struct {
