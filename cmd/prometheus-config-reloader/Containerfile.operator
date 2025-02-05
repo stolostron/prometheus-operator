@@ -16,3 +16,13 @@ COPY --from=builder /workspace/prometheus-config-reloader /bin/prometheus-config
 USER nobody
 
 ENTRYPOINT ["/bin/prometheus-config-reloader"]
+
+LABEL com.redhat.component="prometheus-config-reloader" \
+  name="prometheus-config-reloader" \
+  summary="prometheus-config-reloader" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="data,images" \
+  io.k8s.display-name="prometheus-config-reloader" \
+  maintainer="" \
+  description="prometheus-config-reloader" \
+  io.k8s.description="prometheus-config-reloader"
