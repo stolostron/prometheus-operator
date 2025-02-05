@@ -17,7 +17,7 @@ USER nobody
 
 ENTRYPOINT ["/bin/operator"]
 
-LABEL com.redhat.component="kube-rbac-proxy" \
+LABEL com.redhat.component="prometheus-operator" \
   name="prometheus-operator" \
   summary="prometheus-operator" \
   io.openshift.expose-services="" \
