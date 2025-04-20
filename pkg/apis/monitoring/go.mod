@@ -22,6 +22,6 @@ require (
 	gopkg.in/yaml.v2 v2.4.0 // indirect
 	k8s.io/klog/v2 v2.30.0 // indirect
 	k8s.io/utils v0.0.0-20210930125809-cb0fa318a74b // indirect
-	sigs.k8s.io/json v0.0.0-20211020170558-c049b76a60c6 // indirect
+	sigs.k8s.io/json cfa47c3a1cc8 // indirect
 	sigs.k8s.io/structured-merge-diff/v4 v4.1.2 // indirect
 )
