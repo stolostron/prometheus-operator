@@ -25,6 +25,7 @@ import (
 	"testing"
 
 	"github.com/blang/semver/v4"
+	"github.com/stretchr/testify/require"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 
@@ -35,6 +36,11 @@ var (
 	previousVersionFramework *operatorFramework.Framework
 	framework                *operatorFramework.Framework
 	opImage                  *string
+)
+
+const (
+	testControllerID            = "--controller-id=42"
+	gitHubContentReleaseBaseURL = "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/release-%d.%d"
 )
 
 const testControllerID = "--controller-id=42"
@@ -75,12 +81,6 @@ func skipPromVersionUpgradeTests(t *testing.T) {
 	}
 }
 
-func skipAllNSTests(t *testing.T) {
-	if os.Getenv("EXCLUDE_ALL_NS_TESTS") != "" {
-		t.Skip("Skipping AllNS upgrade tests")
-	}
-}
-
 func skipFeatureGatedTests(t *testing.T) {
 	if os.Getenv("EXCLUDE_FEATURE_GATED_TESTS") != "" {
 		t.Skip("Skipping Feature Gated tests")
@@ -118,7 +118,7 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	prevStableVersionURL := fmt.Sprintf("https://raw.githubusercontent.com/prometheus-operator/prometheus-operator/release-%d.%d/VERSION", currentSemVer.Major, currentSemVer.Minor-1)
+	prevStableVersionURL := fmt.Sprintf(gitHubContentReleaseBaseURL, currentSemVer.Major, currentSemVer.Minor-1) + "/VERSION"
 	reader, err := operatorFramework.URLToIOReader(prevStableVersionURL)
 	if err != nil {
 		logger.Printf("failed to get previous version file content: %v\n", err)
@@ -131,16 +131,14 @@ func TestMain(m *testing.M) {
 		os.Exit(1)
 	}
 
-	prometheusOperatorGithubBranchURL := "https://raw.githubusercontent.com/prometheus-operator/prometheus-operator"
-
 	prevSemVer, err := semver.ParseTolerant(string(prevStableVersion))
 	if err != nil {
 		logger.Printf("failed to parse previous stable version: %v\n", err)
 		os.Exit(1)
 	}
-	prevStableOpImage := fmt.Sprintf("%s:v%s", "quay.io/prometheus-operator/prometheus-operator", strings.TrimSpace(string(prevStableVersion)))
-	prevExampleDir := fmt.Sprintf("%s/release-%d.%d/example", prometheusOperatorGithubBranchURL, prevSemVer.Major, prevSemVer.Minor)
-	prevResourcesDir := fmt.Sprintf("%s/release-%d.%d/test/framework/resources", prometheusOperatorGithubBranchURL, prevSemVer.Major, prevSemVer.Minor)
+	prevStableOpImage := fmt.Sprintf("quay.io/prometheus-operator/prometheus-operator:v%s", strings.TrimSpace(string(prevStableVersion)))
+	prevExampleDir := fmt.Sprintf(gitHubContentReleaseBaseURL, prevSemVer.Major, prevSemVer.Minor) + "/example"
+	prevResourcesDir := fmt.Sprintf(gitHubContentReleaseBaseURL, prevSemVer.Major, prevSemVer.Minor) + "/test/framework/resources"
 
 	if previousVersionFramework, err = operatorFramework.New(*kubeconfig, prevStableOpImage, prevExampleDir, prevResourcesDir, prevSemVer); err != nil {
 		logger.Printf("failed to setup previous version framework: %v\n", err)
@@ -170,23 +168,27 @@ func TestMain(m *testing.M) {
 // TestAllNS tests the Prometheus Operator watching all namespaces in a
 // Kubernetes cluster.
 func TestAllNS(t *testing.T) {
-	skipAllNSTests(t)
+	ctx := context.Background()
 
 	testCtx := framework.NewTestCtx(t)
 	defer testCtx.Cleanup(t)
 
-	ns := framework.CreateNamespace(context.Background(), t, testCtx)
+	ns := framework.CreateNamespace(ctx, t, testCtx)
 
-	finalizers, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, nil, nil, nil, nil, true, true, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	finalizers, err := framework.CreateOrUpdatePrometheusOperator(ctx, ns, nil, nil, nil, nil, true, true, true)
+	require.NoError(t, err)
 
 	for _, f := range finalizers {
 		testCtx.AddFinalizerFn(f)
 	}
 
-	t.Run("TestServerTLS", testServerTLS(context.Background(), ns))
+	t.Run("TestServerTLS", func(t *testing.T) {
+		testServerTLS(t, ns)
+	})
+	t.Run("TestPrometheusOperatorMetrics", func(t *testing.T) {
+		t.Helper()
+		testPrometheusOperatorMetrics(t, ns)
+	})
 
 	// t.Run blocks until the function passed as the second argument (f) returns or
 	// calls t.Parallel to become a parallel test. Run reports whether f succeeded
@@ -204,27 +206,14 @@ func TestAllNS(t *testing.T) {
 		"app.kubernetes.io/name": "prometheus-operator",
 	})).String()}
 
-	pl, err := framework.KubeClient.CoreV1().Pods(ns).List(context.Background(), opts)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if expected := 1; len(pl.Items) != expected {
-		t.Fatalf("expected %v Prometheus Operator pods, but got %v", expected, len(pl.Items))
-	}
-	restarts, err := framework.GetPodRestartCount(context.Background(), ns, pl.Items[0].GetName())
-	if err != nil {
-		t.Fatalf("failed to retrieve restart count of Prometheus Operator pod: %v", err)
-	}
-	if len(restarts) != 1 {
-		t.Fatalf("expected to have 1 container but got %d", len(restarts))
-	}
+	pl, err := framework.KubeClient.CoreV1().Pods(ns).List(ctx, opts)
+	require.NoError(t, err)
+	require.Len(t, pl.Items, 1, "expected %v Prometheus Operator pods, but got %v", 1, len(pl.Items))
+	restarts, err := framework.GetPodRestartCount(ctx, ns, pl.Items[0].GetName())
+	require.NoError(t, err)
+	require.Len(t, restarts, 1)
 	for _, restart := range restarts {
-		if restart != 0 {
-			t.Fatalf(
-				"expected Prometheus Operator to never restart during entire test execution but got %d restarts",
-				restart,
-			)
-		}
+		require.Equal(t, int32(0), restart, "expected Prometheus Operator to never restart during entire test execution but got %d restarts", restart)
 	}
 }
 
@@ -235,7 +224,7 @@ func testAllNSAlertmanager(t *testing.T) {
 		"AlertmanagerCRD":                         testAlertmanagerCRDValidation,
 		"AMCreateDeleteCluster":                   testAMCreateDeleteCluster,
 		"AMWithStatefulsetCreationFailure":        testAlertmanagerWithStatefulsetCreationFailure,
-		"AMScaling":                               testAMScaling,
+		"AMScalingReplicas":                       testAMScalingReplicas,
 		"AMVersionMigration":                      testAMVersionMigration,
 		"AMStorageUpdate":                         testAMStorageUpdate,
 		"AMExposingWithKubernetesAPI":             testAMExposingWithKubernetesAPI,
@@ -253,6 +242,8 @@ func testAllNSAlertmanager(t *testing.T) {
 		"AMMinReadySeconds":                       testAlertManagerMinReadySeconds,
 		"AMWeb":                                   testAMWeb,
 		"AMTemplateReloadConfig":                  testAMTmplateReloadConfig,
+		"AMStatusScale":                           testAlertmanagerStatusScale,
+		"AMServiceName":                           testAlertManagerServiceName,
 	}
 
 	for name, f := range testFuncs {
@@ -316,6 +307,9 @@ func testAllNSPrometheus(t *testing.T) {
 		"PrometheusAgentCheckStorageClass":          testAgentCheckStorageClass,
 		"PrometheusAgentStatusScale":                testPrometheusAgentStatusScale,
 		"PrometheusStatusScale":                     testPrometheusStatusScale,
+		"ScrapeConfigCRDValidations":                testScrapeConfigCRDValidations,
+		"PrometheusServiceName":                     testPrometheusServiceName,
+		"PrometheusAgentSSetServiceName":            testPrometheusAgentSSetServiceName,
 	}
 
 	for name, f := range testFuncs {
@@ -334,6 +328,8 @@ func testAllNSThanosRuler(t *testing.T) {
 		"ThanosRulerAlertmanagerConfig":                 testTRAlertmanagerConfig,
 		"ThanosRulerQueryConfig":                        testTRQueryConfig,
 		"ThanosRulerCheckStorageClass":                  testTRCheckStorageClass,
+		"ThanosRulerServiceName":                        testThanosRulerServiceName,
+		"ThanosRulerStateless":                          testThanosRulerStateless,
 	}
 	for name, f := range testFuncs {
 		t.Run(name, f)
@@ -420,7 +416,12 @@ const (
 func TestGatedFeatures(t *testing.T) {
 	skipFeatureGatedTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		// To be added.
+		"CreatePrometheusAgentDaemonSet":            testCreatePrometheusAgentDaemonSet,
+		"PromAgentDaemonSetResourceUpdate":          testPromAgentDaemonSetResourceUpdate,
+		"PromAgentReconcileDaemonSetResourceUpdate": testPromAgentReconcileDaemonSetResourceUpdate,
+		"PromAgentReconcileDaemonSetResourceDelete": testPromAgentReconcileDaemonSetResourceDelete,
+		"PrometheusAgentDaemonSetSelectPodMonitor":  testPrometheusAgentDaemonSetSelectPodMonitor,
+		"PrometheusRetentionPolicies":               testPrometheusRetentionPolicies,
 	}
 
 	for name, f := range testFuncs {
@@ -438,9 +439,7 @@ func TestPrometheusVersionUpgrade(t *testing.T) {
 	ns := framework.CreateNamespace(context.Background(), t, testCtx)
 
 	finalizers, err := framework.CreateOrUpdatePrometheusOperator(context.Background(), ns, nil, nil, nil, nil, true, true, true)
-	if err != nil {
-		t.Fatal(err)
-	}
+	require.NoError(t, err)
 
 	for _, f := range finalizers {
 		testCtx.AddFinalizerFn(f)
@@ -449,18 +448,36 @@ func TestPrometheusVersionUpgrade(t *testing.T) {
 	t.Run("PromVersionMigration", testPromVersionMigration)
 }
 
-func testServerTLS(ctx context.Context, namespace string) func(t *testing.T) {
+// testMultipleOperators checks that multiple Prometheus operator instances can
+// run concurrently without stepping on each other toes when properly
+// configured with ControllerID.
+func testMultipleOperators(testCtx *operatorFramework.TestCtx) func(t *testing.T) {
 	return func(t *testing.T) {
 		skipPrometheusTests(t)
-		if err := framework.WaitForServiceReady(context.Background(), namespace, prometheusOperatorServiceName); err != nil {
-			t.Fatal("waiting for prometheus operator service: ", err)
+
+		ns := framework.CreateNamespace(context.Background(), t, testCtx)
+		// Create operator-2 in a new ns and set controller-id.
+		finalizers, err := framework.CreateOrUpdatePrometheusOperatorWithOpts(context.Background(),
+			operatorFramework.PrometheusOperatorOpts{
+				Namespace:           ns,
+				ClusterRoleBindings: true,
+				EnableScrapeConfigs: true,
+				AdditionalArgs:      []string{testControllerID},
+			})
+		require.NoError(t, err)
+
+		for _, f := range finalizers {
+			testCtx.AddFinalizerFn(f)
 		}
 
-		operatorService := framework.KubeClient.CoreV1().Services(namespace)
-		request := operatorService.ProxyGet("https", prometheusOperatorServiceName, "https", "/healthz", make(map[string]string))
-		_, err := request.DoRaw(ctx)
-		if err != nil {
-			t.Fatal(err)
+		testFuncs := map[string]func(t *testing.T){
+			"PrometheusServer": testMultipleOperatorsPrometheusServer,
+			"PrometheusAgent":  testMultipleOperatorsPrometheusAgent,
+			"AlertManager":     testMultipleOperatorsAlertManager,
+			"ThanosRuler":      testMultipleOperatorsThanosRuler,
+		}
+		for name, f := range testFuncs {
+			t.Run(name, f)
 		}
 	}
 }

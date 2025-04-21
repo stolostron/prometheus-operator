@@ -1,3 +1,15 @@
+---
+weight: 506
+toc: true
+title: Release
+menu:
+    docs:
+        parent: community
+lead: ""
+images: []
+draft: false
+---
+
 # Release schedule
 
 Following [Prometheus](https://github.com/prometheus/prometheus/blob/main/RELEASE.md) and [Thanos](https://github.com/thanos-io/thanos/blob/main/docs/release-process.md), this project aims for a predictable release schedule.
@@ -6,8 +18,16 @@ The release cycle for cutting releases is every 6 weeks
 
 | Release | Date of release (year-month-day) | Release shepherd                          |
 |---------|----------------------------------|-------------------------------------------|
-| v0.78   | 2024-10-30                       | **searching for volunteer**               |
-| v0.77   | 2024-09-18                       | **searching for volunteer**               |
+| v0.86   | 2025-10-01                       | **searching for volunteer**               |
+| v0.85   | 2025-08-20                       | **searching for volunteer**               |
+| v0.84   | 2025-07-09                       | **searching for volunteer**               |
+| v0.83   | 2025-05-28                       | **searching for volunteer**               |
+| v0.82   | 2025-04-16                       | Jayapriya Pai (Github: @slashpai)         |
+| v0.81   | 2025-03-05                       | Simon Pasquier (GitHub: @simonpasquier)   |
+| v0.80   | 2025-01-22                       | Jayapriya Pai (Github: @slashpai)         |
+| v0.79   | 2024-12-11                       | Jayapriya Pai (Github: @slashpai)         |
+| v0.78   | 2024-10-30                       | Simon Pasquier (GitHub: @simonpasquier)   |
+| v0.77   | 2024-09-18                       | Jayapriya Pai (Github: @slashpai)         |
 | v0.76   | 2024-08-07                       | Nicolas Takashi (Github: @nicolastakashi) |
 | v0.75   | 2024-06-26                       | Jayapriya Pai (Github: @slashpai)         |
 | v0.74   | 2024-05-15                       | Simon Pasquier (GitHub: @simonpasquier)   |

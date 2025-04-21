@@ -23,7 +23,6 @@ import (
 	"reflect"
 	"sort"
 	"strings"
-	"testing"
 	"time"
 
 	v1 "k8s.io/api/core/v1"
@@ -68,10 +67,11 @@ type Cert struct {
 }
 
 type PromRemoteWriteTestConfig struct {
-	ClientKey          Key
-	ClientCert         Cert
-	CA                 Cert
-	InsecureSkipVerify bool
+	ClientKey                 Key
+	ClientCert                Cert
+	CA                        Cert
+	InsecureSkipVerify        bool
+	RemoteWriteMessageVersion *monitoringv1.RemoteWriteMessageVersion
 }
 
 func (f *Framework) CreateCertificateResources(namespace, certsDir string, prwtc PromRemoteWriteTestConfig) error {
@@ -178,6 +178,10 @@ func (f *Framework) CreateCertificateResources(namespace, certsDir string, prwtc
 }
 
 func (f *Framework) MakeBasicPrometheus(ns, name, group string, replicas int32) *monitoringv1.Prometheus {
+	promVersion := operator.DefaultPrometheusVersion
+	if os.Getenv("TEST_PROMETHEUS_V2") == "true" {
+		promVersion = operator.DefaultPrometheusV2
+	}
 	return &monitoringv1.Prometheus{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:        name,
@@ -187,7 +191,7 @@ func (f *Framework) MakeBasicPrometheus(ns, name, group string, replicas int32) 
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 				Replicas: &replicas,
-				Version:  operator.DefaultPrometheusVersion,
+				Version:  promVersion,
 				ServiceMonitorSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"group": group,
@@ -217,7 +221,8 @@ func (f *Framework) MakeBasicPrometheus(ns, name, group string, replicas int32) 
 // AddRemoteWriteWithTLSToPrometheus configures Prometheus to send samples to the remote-write endpoint.
 func (prwtc PromRemoteWriteTestConfig) AddRemoteWriteWithTLSToPrometheus(p *monitoringv1.Prometheus, url string) {
 	p.Spec.RemoteWrite = []monitoringv1.RemoteWriteSpec{{
-		URL: url,
+		URL:            url,
+		MessageVersion: prwtc.RemoteWriteMessageVersion,
 		QueueConfig: &monitoringv1.QueueConfig{
 			BatchSendDeadline: (*monitoringv1.Duration)(ptr.To("1s")),
 		},
@@ -285,8 +290,7 @@ func (prwtc PromRemoteWriteTestConfig) AddRemoteWriteWithTLSToPrometheus(p *moni
 }
 
 func (f *Framework) EnableRemoteWriteReceiverWithTLS(p *monitoringv1.Prometheus) {
-	p.Spec.EnableFeatures = []monitoringv1.EnableFeature{"remote-write-receiver"}
-
+	p.Spec.EnableRemoteWriteReceiver = true
 	p.Spec.Web = &monitoringv1.PrometheusWebSpec{
 		WebConfigFileFields: monitoringv1.WebConfigFileFields{
 			TLSConfig: &monitoringv1.WebTLSConfig{
@@ -313,7 +317,7 @@ func (f *Framework) EnableRemoteWriteReceiverWithTLS(p *monitoringv1.Prometheus)
 					Key: PrivateKey,
 				},
 				// Liveness/readiness probes don't work when using "RequireAndVerifyClientCert".
-				ClientAuthType: "VerifyClientCertIfGiven",
+				ClientAuthType: ptr.To("VerifyClientCertIfGiven"),
 			},
 		},
 	}
@@ -323,7 +327,7 @@ func (f *Framework) AddAlertingToPrometheus(p *monitoringv1.Prometheus, ns, name
 	p.Spec.Alerting = &monitoringv1.AlertingSpec{
 		Alertmanagers: []monitoringv1.AlertmanagerEndpoints{
 			{
-				Namespace: ns,
+				Namespace: ptr.To(ns),
 				Name:      fmt.Sprintf("alertmanager-%s", name),
 				Port:      intstr.FromString("web"),
 			},
@@ -372,7 +376,7 @@ func (f *Framework) MakeBasicPodMonitor(name string) *monitoringv1.PodMonitor {
 			},
 			PodMetricsEndpoints: []monitoringv1.PodMetricsEndpoint{
 				{
-					Port:     "web",
+					Port:     ptr.To("web"),
 					Interval: "30s",
 				},
 			},
@@ -645,7 +649,7 @@ func (f *Framework) WaitForDiscoveryWorking(ctx context.Context, ns, svcName, pr
 		if loopErr != nil {
 			return false, loopErr
 		}
-		if 1 != len(pods.Items) {
+		if len(pods.Items) != 1 {
 			return false, nil
 		}
 		podIP := pods.Items[0].Status.PodIP
@@ -756,22 +760,46 @@ func (f *Framework) GetHealthyTargets(ctx context.Context, ns, svcName string) (
 	return healthyTargets, nil
 }
 
-func (f *Framework) CheckPrometheusFiringAlert(ctx context.Context, ns, svcName, alertName string) (bool, error) {
-	response, err := f.PrometheusSVCGetRequest(ctx, ns, svcName, "http", "/api/v1/query", map[string]string{"query": fmt.Sprintf(`ALERTS{alertname="%v",alertstate="firing"}`, alertName)})
+// GetPrometheusFiringAlerts returns a slice of alert labels matching the given alert name.
+func (f *Framework) GetPrometheusFiringAlerts(ctx context.Context, ns, svcName, alertName string) ([]map[string]string, error) {
+	response, err := f.PrometheusSVCGetRequest(
+		ctx,
+		ns,
+		svcName,
+		"http",
+		"/api/v1/query",
+		map[string]string{
+			"query": fmt.Sprintf(`ALERTS{alertname="%v",alertstate="firing"}`, alertName),
+		},
+	)
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 
 	q := PrometheusQueryAPIResponse{}
 	if err := json.NewDecoder(bytes.NewBuffer(response)).Decode(&q); err != nil {
-		return false, err
+		return nil, err
 	}
 
-	if len(q.Data.Result) != 1 {
-		return false, fmt.Errorf("expected 1 query result but got %v", len(q.Data.Result))
+	alerts := make([]map[string]string, len(q.Data.Result))
+	for i, res := range q.Data.Result {
+		alerts[i] = res.Metric
 	}
 
-	return true, nil
+	return alerts, nil
+}
+
+func (f *Framework) CheckPrometheusFiringAlert(ctx context.Context, ns, svcName, alertName string) error {
+	alerts, err := f.GetPrometheusFiringAlerts(ctx, ns, svcName, alertName)
+	if err != nil {
+		return err
+	}
+
+	if len(alerts) != 1 {
+		return fmt.Errorf("expected 1 query result but got %v", len(alerts))
+	}
+
+	return nil
 }
 
 func (f *Framework) PrometheusQuery(ns, svcName, scheme, query string) ([]PrometheusQueryResult, error) {
@@ -792,31 +820,16 @@ func (f *Framework) PrometheusQuery(ns, svcName, scheme, query string) ([]Promet
 	return q.Data.Result, nil
 }
 
-// PrintPrometheusLogs prints the logs for each Prometheus replica.
-func (f *Framework) PrintPrometheusLogs(ctx context.Context, t *testing.T, p *monitoringv1.Prometheus) {
-	if p == nil {
-		return
-	}
-
-	replicas := int(*p.Spec.Replicas)
-	for i := 0; i < replicas; i++ {
-		l, err := f.GetLogs(ctx, p.Namespace, fmt.Sprintf("prometheus-%s-%d", p.Name, i), "prometheus")
-		if err != nil {
-			t.Logf("failed to retrieve logs for replica[%d]: %v", i, err)
-			continue
-		}
-		t.Logf("Prometheus %q/%q (replica #%d) logs:", p.Namespace, p.Name, i)
-		t.Logf("%s", l)
-	}
-}
-
 func (f *Framework) WaitForPrometheusFiringAlert(ctx context.Context, ns, svcName, alertName string) error {
 	var loopError error
 
-	err := wait.PollUntilContextTimeout(ctx, time.Second, 5*f.DefaultTimeout, false, func(ctx context.Context) (bool, error) {
-		var firing bool
-		firing, loopError = f.CheckPrometheusFiringAlert(ctx, ns, svcName, alertName)
-		return firing, nil
+	err := wait.PollUntilContextTimeout(ctx, time.Second, 5*f.DefaultTimeout, true, func(_ context.Context) (bool, error) {
+		loopError = f.CheckPrometheusFiringAlert(context.Background(), ns, svcName, alertName)
+		if loopError != nil {
+			return false, nil
+		}
+
+		return true, nil
 	})
 
 	if err != nil {

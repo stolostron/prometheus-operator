@@ -20,14 +20,17 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/blang/semver/v4"
+	"github.com/cespare/xxhash/v2"
 	"github.com/gogo/protobuf/proto"
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
+	rbacv1 "k8s.io/api/rbac/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	apiclient "k8s.io/apiextensions-apiserver/pkg/client/clientset/clientset"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -48,6 +51,7 @@ import (
 	v1monitoringclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1"
 	v1alpha1monitoringclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1alpha1"
 	v1beta1monitoringclient "github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/typed/monitoring/v1beta1"
+	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 )
 
 const (
@@ -95,9 +99,6 @@ func New(kubeconfig, opImage, exampleDir, resourcesDir string, operatorVersion s
 	}
 
 	httpc := cli.CoreV1().RESTClient().(*rest.RESTClient).Client
-	if err != nil {
-		return nil, fmt.Errorf("creating http-client failed: %w", err)
-	}
 
 	mClientV1, err := v1monitoringclient.NewForConfig(config)
 	if err != nil {
@@ -214,7 +215,7 @@ type PrometheusOperatorOpts struct {
 	ClusterRoleBindings    bool
 	EnableScrapeConfigs    bool
 	AdditionalArgs         []string
-	EnabledFeatureGates    []string
+	EnabledFeatureGates    []operator.FeatureGateName
 }
 
 func (f *Framework) CreateOrUpdatePrometheusOperator(
@@ -227,7 +228,7 @@ func (f *Framework) CreateOrUpdatePrometheusOperator(
 	createResourceAdmissionHooks,
 	createClusterRoleBindings,
 	createScrapeConfigCrd bool,
-	enabledFeatureGates ...string,
+	enabledFeatureGates ...operator.FeatureGateName,
 ) ([]FinalizerFn, error) {
 	return f.CreateOrUpdatePrometheusOperatorWithOpts(
 		ctx,
@@ -267,22 +268,44 @@ func (f *Framework) CreateOrUpdatePrometheusOperatorWithOpts(
 		return nil, fmt.Errorf("failed to create or update prometheus operator service account: %w", err)
 	}
 
-	clusterRole, err := f.CreateOrUpdateClusterRole(ctx, fmt.Sprintf("%s/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml", f.exampleDir))
+	clusterRole, err := clusterRoleFromYaml(opts.Namespace, f.exampleDir+"/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create or update prometheus cluster role: %w", err)
+		return nil, fmt.Errorf("failed to load prometheus-operator cluster role: %w", err)
 	}
 
-	// Add CRD rbac rules
-	clusterRole.Rules = append(clusterRole.Rules, CRDCreateRule, CRDMonitoringRule)
-	if err := f.UpdateClusterRole(ctx, clusterRole); err != nil {
-		return nil, fmt.Errorf("failed to update prometheus cluster role: %w", err)
+	// Use a unique cluster role name to avoid parallel tests doing concurrent
+	// updates to the same resource.
+	xxh := xxhash.New()
+	if _, err := xxh.Write([]byte(opts.Namespace)); err != nil {
+		return nil, fmt.Errorf("failed to write hash: %w", err)
 	}
+	clusterRole.Name = fmt.Sprintf("%s-%x", clusterRole.Name, xxh.Sum64())
+
+	clusterRole.Rules = append(clusterRole.Rules, CRDCreateRule, CRDMonitoringRule)
+	if slices.Contains(opts.EnabledFeatureGates, operator.PrometheusAgentDaemonSetFeature) {
+		daemonsetRule := rbacv1.PolicyRule{
+			APIGroups: []string{"apps"},
+			Resources: []string{"daemonsets"},
+			Verbs:     []string{"*"},
+		}
+		clusterRole.Rules = append(clusterRole.Rules, daemonsetRule)
+	}
+
+	clusterRole, err = f.CreateOrUpdateClusterRole(ctx, clusterRole)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create/update prometheus cluster role: %w", err)
+	}
+	finalizers = append(finalizers, func() error {
+		return f.DeleteClusterRole(ctx, clusterRole.Name)
+	})
 
 	if opts.ClusterRoleBindings {
 		// Grant permissions on all namespaces.
-		if _, err := f.createOrUpdateClusterRoleBinding(ctx, opts.Namespace, fmt.Sprintf("%s/rbac/prometheus-operator/prometheus-operator-cluster-role-binding.yaml", f.exampleDir)); err != nil {
+		fn, err := f.createOrUpdateClusterRoleBinding(ctx, opts.Namespace, clusterRole, f.exampleDir+"/rbac/prometheus-operator/prometheus-operator-cluster-role-binding.yaml")
+		if err != nil {
 			return nil, fmt.Errorf("failed to create or update prometheus cluster role binding: %w", err)
 		}
+		finalizers = append(finalizers, fn)
 	} else {
 		// Grant permissions on specific namespaces.
 		var namespaces []string
@@ -291,7 +314,7 @@ func (f *Framework) CreateOrUpdatePrometheusOperatorWithOpts(
 		namespaces = append(namespaces, opts.AlertmanagerNamespaces...)
 
 		for _, n := range namespaces {
-			if _, err := f.CreateOrUpdateRoleBindingForSubjectNamespace(ctx, n, opts.Namespace, fmt.Sprintf("%s/prometheus-operator-role-binding.yaml", f.resourcesDir)); err != nil {
+			if _, err := f.createOrUpdateRoleBindingForSubjectNamespace(ctx, n, opts.Namespace, clusterRole, fmt.Sprintf("%s/prometheus-operator-role-binding.yaml", f.resourcesDir)); err != nil {
 				return nil, fmt.Errorf("failed to create or update prometheus operator role binding: %w", err)
 			}
 		}
@@ -385,7 +408,7 @@ func (f *Framework) CreateOrUpdatePrometheusOperatorWithOpts(
 		return nil, fmt.Errorf("failed to create or update prometheus-operator TLS secret: %w", err)
 	}
 
-	deploy, err := MakeDeployment(fmt.Sprintf("%s/rbac/prometheus-operator/prometheus-operator-deployment.yaml", f.exampleDir))
+	deploy, err := MakeDeployment(f.exampleDir + "/rbac/prometheus-operator/prometheus-operator-deployment.yaml")
 	if err != nil {
 		return nil, err
 	}
@@ -535,14 +558,8 @@ func (f *Framework) CreateOrUpdatePrometheusOperatorWithOpts(
 	return finalizers, nil
 }
 
-// DeletePrometheusOperatorClusterResource delete Prometheus Operator cluster wide resources
-// if the resource is found.
+// DeletePrometheusOperatorClusterResource delete Prometheus Operator cluster wide resources.
 func (f *Framework) DeletePrometheusOperatorClusterResource(ctx context.Context) error {
-	err := f.DeleteClusterRole(ctx, fmt.Sprintf("%s/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml", f.exampleDir))
-	if err != nil && !apierrors.IsNotFound(err) {
-		return fmt.Errorf("failed to delete prometheus cluster role: %w", err)
-	}
-
 	group := monitoring.GroupName
 
 	alertmanagerCRD, err := f.MakeCRD(fmt.Sprintf("%s/prometheus-operator-crd/%s_%s.yaml", f.exampleDir, group, monitoringv1.AlertmanagerName))
@@ -648,42 +665,199 @@ func (f *Framework) DeletePrometheusOperatorClusterResource(ctx context.Context)
 }
 
 func (f *Framework) SetupPrometheusRBAC(ctx context.Context, t *testing.T, testCtx *TestCtx, ns string) {
-	if _, err := f.CreateOrUpdateClusterRole(ctx, fmt.Sprintf("%s/rbac/prometheus/prometheus-cluster-role.yaml", f.exampleDir)); err != nil && !apierrors.IsAlreadyExists(err) {
+	t.Helper()
+
+	clusterRole, err := clusterRoleFromYaml(ns, f.exampleDir+"/rbac/prometheus/prometheus-cluster-role.yaml")
+	if err != nil {
+		t.Fatalf("failed to load prometheus cluster role: %v", err)
+	}
+
+	cr, err := f.CreateOrUpdateClusterRole(ctx, clusterRole)
+	if err != nil {
 		t.Fatalf("failed to create or update prometheus cluster role: %v", err)
 	}
-	if finalizerFn, err := f.createOrUpdateServiceAccount(ctx, ns, fmt.Sprintf("%s/rbac/prometheus/prometheus-service-account.yaml", f.exampleDir)); err != nil {
-		t.Fatal(fmt.Errorf("failed to create or update prometheus service account: %w", err))
-	} else {
-		if testCtx != nil {
-			testCtx.AddFinalizerFn(finalizerFn)
-		}
 
+	finalizerFn, err := f.createOrUpdateServiceAccount(ctx, ns, f.exampleDir+"/rbac/prometheus/prometheus-service-account.yaml")
+	if err != nil {
+		t.Fatalf("failed to create or update prometheus service account: %v", err)
 	}
+	testCtx.AddFinalizerFn(finalizerFn)
 
-	if finalizerFn, err := f.CreateOrUpdateRoleBinding(ctx, ns, fmt.Sprintf("%s/prometheus-role-binding.yml", f.resourcesDir)); err != nil {
-		t.Fatal(fmt.Errorf("failed to create prometheus role binding: %w", err))
-	} else {
-		if testCtx != nil {
-			testCtx.AddFinalizerFn(finalizerFn)
-		}
+	finalizerFn, err = f.createOrUpdateRoleBinding(ctx, ns, cr, f.resourcesDir+"/prometheus-role-binding.yml")
+	if err != nil {
+		t.Fatalf("failed to create prometheus role binding: %v", err)
 	}
+	testCtx.AddFinalizerFn(finalizerFn)
 }
 
 func (f *Framework) SetupPrometheusRBACGlobal(ctx context.Context, t *testing.T, testCtx *TestCtx, ns string) {
-	if _, err := f.CreateOrUpdateClusterRole(ctx, "../../example/rbac/prometheus/prometheus-cluster-role.yaml"); err != nil && !apierrors.IsAlreadyExists(err) {
-		t.Fatalf("failed to create or update prometheus cluster role: %v", err)
-	}
-	if finalizerFn, err := f.createOrUpdateServiceAccount(ctx, ns, "../../example/rbac/prometheus/prometheus-service-account.yaml"); err != nil {
-		t.Fatal(fmt.Errorf("failed to create or update prometheus service account: %w", err))
-	} else {
-		testCtx.AddFinalizerFn(finalizerFn)
+	t.Helper()
+
+	clusterRole, err := clusterRoleFromYaml(ns, f.exampleDir+"/rbac/prometheus/prometheus-cluster-role.yaml")
+	if err != nil {
+		t.Fatalf("failed to load prometheus cluster role: %v", err)
 	}
 
-	if finalizerFn, err := f.createOrUpdateClusterRoleBinding(ctx, ns, "../../example/rbac/prometheus/prometheus-cluster-role-binding.yaml"); err != nil && !apierrors.IsAlreadyExists(err) {
-		t.Fatal(fmt.Errorf("failed to create or update prometheus cluster role binding: %w", err))
-	} else {
-		testCtx.AddFinalizerFn(finalizerFn)
+	if _, err := f.CreateOrUpdateClusterRole(ctx, clusterRole); err != nil && !apierrors.IsAlreadyExists(err) {
+		t.Fatalf("failed to create or update prometheus cluster role: %v", err)
 	}
+
+	finalizerFn, err := f.createOrUpdateServiceAccount(ctx, ns, f.exampleDir+"/rbac/prometheus/prometheus-service-account.yaml")
+	if err != nil {
+		t.Fatalf("failed to create or update prometheus service account: %v", err)
+	}
+	testCtx.AddFinalizerFn(finalizerFn)
+
+	finalizerFn, err = f.createOrUpdateClusterRoleBinding(ctx, ns, clusterRole, f.exampleDir+"/rbac/prometheus/prometheus-cluster-role-binding.yaml")
+	if err != nil {
+		t.Fatalf("failed to create or update prometheus cluster role binding: %v", err)
+	}
+	testCtx.AddFinalizerFn(finalizerFn)
+}
+
+func (f *Framework) configureAlertmanagerConfigConversion(ctx context.Context, svc *v1.Service, cert []byte) (FinalizerFn, error) {
+	patch, err := f.MakeCRD(fmt.Sprintf("%s/alertmanager-crd-conversion/patch.json", f.exampleDir))
+	if err != nil {
+		return nil, err
+	}
+
+	crd, err := f.GetCRD(ctx, patch.Name)
+	if err != nil {
+		return nil, err
+	}
+
+	originalBytes, err := json.Marshal(crd)
+	if err != nil {
+		return nil, err
+	}
+
+	patch.Spec.Conversion.Webhook.ClientConfig.Service.Name = svc.Name
+	patch.Spec.Conversion.Webhook.ClientConfig.Service.Namespace = svc.Namespace
+	patch.Spec.Conversion.Webhook.ClientConfig.Service.Port = &svc.Spec.Ports[0].Port
+	patch.Spec.Conversion.Webhook.ClientConfig.CABundle = cert
+
+	crd.Spec.Conversion = patch.Spec.Conversion
+
+	patchBytes, err := json.Marshal(crd)
+	if err != nil {
+		return nil, err
+	}
+
+	jsonResult, err := strategicpatch.StrategicMergePatch(originalBytes, patchBytes, apiextensionsv1.CustomResourceDefinition{})
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate merge patch: %w", err)
+	}
+
+	crd, err = f.APIServerClient.ApiextensionsV1().CustomResourceDefinitions().Patch(
+		ctx,
+		crd.Name,
+		types.StrategicMergePatchType,
+		jsonResult,
+		metav1.PatchOptions{},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to patch CustomResourceDefinition object: %w", err)
+	}
+
+	if crd.Spec.Conversion.Strategy != apiextensionsv1.WebhookConverter {
+		return nil, fmt.Errorf("expected conversion strategy to be %s, got %s", apiextensionsv1.WebhookConverter, crd.Spec.Conversion.Strategy)
+	}
+
+	finalizerFn := func() error {
+		crd, err := f.GetCRD(ctx, patch.Name)
+		if err != nil {
+			return err
+		}
+
+		crd.Spec.Conversion = nil
+		_, err = f.APIServerClient.ApiextensionsV1().CustomResourceDefinitions().Update(ctx, crd, metav1.UpdateOptions{})
+		if err != nil {
+			return fmt.Errorf("unable to reset conversion configuration of AlertmanagerConfig CRD: %w", err)
+		}
+
+		return err
+	}
+
+	return finalizerFn, nil
+}
+
+// CreateOrUpdateAdmissionWebhookServer deploys an HTTPS server which acts as a
+// validating and mutating webhook server for PrometheusRule and
+// AlertManagerConfig. It is also able to convert AlertmanagerConfig objects
+// from v1alpha1 to v1beta1.
+// Returns the service and the certificate authority which can be used to trust the TLS certificate of the server.
+func (f *Framework) CreateOrUpdateAdmissionWebhookServer(
+	ctx context.Context,
+	namespace string,
+	image string,
+) (*v1.Service, []byte, error) {
+
+	certBytes, keyBytes, err := certutil.GenerateSelfSignedCertKey(
+		fmt.Sprintf("%s.%s.svc", admissionWebhookServiceName, namespace),
+		nil,
+		nil,
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate certificate and key: %w", err)
+	}
+
+	if err := f.CreateOrUpdateSecretWithCert(ctx, certBytes, keyBytes, namespace, standaloneAdmissionHookSecretName); err != nil {
+		return nil, nil, fmt.Errorf("failed to create or update admission webhook secret: %w", err)
+	}
+
+	deploy, err := MakeDeployment(fmt.Sprintf("%s/admission-webhook/deployment.yaml", f.exampleDir))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	// Adjust replica count in case of single-node clusters because the
+	// deployment manifest has anti-affinity rules.
+	nodes, err := f.Nodes(ctx)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(nodes) == 1 {
+		deploy.Spec.Replicas = ptr.To(int32(1))
+		deploy.Spec.Template.Spec.Affinity = nil
+		deploy.Spec.Strategy = appsv1.DeploymentStrategy{}
+	}
+
+	deploy.Spec.Template.Spec.Containers[0].Args = append(deploy.Spec.Template.Spec.Containers[0].Args, "--log-level=debug")
+
+	if image != "" {
+		// Override operator image used, if specified when running tests.
+		deploy.Spec.Template.Spec.Containers[0].Image = image
+		repoAndTag := strings.Split(image, ":")
+		if len(repoAndTag) != 2 {
+			return nil, nil, fmt.Errorf(
+				"expected image '%v' split by colon to result in two substrings but got '%v'",
+				image,
+				repoAndTag,
+			)
+		}
+	}
+
+	_, err = f.createOrUpdateServiceAccount(ctx, namespace, fmt.Sprintf("%s/admission-webhook/service-account.yaml", f.exampleDir))
+	if err != nil {
+		return nil, nil, err
+	}
+
+	err = f.CreateOrUpdateDeploymentAndWaitUntilReady(ctx, namespace, deploy)
+	if err != nil {
+		return nil, nil, err
+	}
+
+	service, err := MakeService(fmt.Sprintf("%s/admission-webhook/service.yaml", f.exampleDir))
+	if err != nil {
+		return nil, nil, fmt.Errorf("cannot parse service file: %w", err)
+	}
+
+	service.Namespace = namespace
+	if _, err := f.CreateOrUpdateServiceAndWaitUntilReady(ctx, namespace, service); err != nil {
+		return nil, nil, fmt.Errorf("failed to create or update admission webhook server service: %w", err)
+	}
+
+	return service, certBytes, nil
 }
 
 func (f *Framework) configureAlertmanagerConfigConversion(ctx context.Context, svc *v1.Service, cert []byte) (FinalizerFn, error) {

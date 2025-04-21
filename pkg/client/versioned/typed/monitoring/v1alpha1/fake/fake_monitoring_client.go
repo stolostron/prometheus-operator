@@ -27,7 +27,15 @@ type FakeMonitoringV1alpha1 struct {
 }
 
 func (c *FakeMonitoringV1alpha1) AlertmanagerConfigs(namespace string) v1alpha1.AlertmanagerConfigInterface {
-	return &FakeAlertmanagerConfigs{c, namespace}
+	return newFakeAlertmanagerConfigs(c, namespace)
+}
+
+func (c *FakeMonitoringV1alpha1) PrometheusAgents(namespace string) v1alpha1.PrometheusAgentInterface {
+	return newFakePrometheusAgents(c, namespace)
+}
+
+func (c *FakeMonitoringV1alpha1) ScrapeConfigs(namespace string) v1alpha1.ScrapeConfigInterface {
+	return newFakeScrapeConfigs(c, namespace)
 }
 
 func (c *FakeMonitoringV1alpha1) PrometheusAgents(namespace string) v1alpha1.PrometheusAgentInterface {

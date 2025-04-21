@@ -70,21 +70,6 @@ func tlsAssetKeyFromSelector(ns string, sel monitoringv1.SecretOrConfigMap) tlsA
 	}
 }
 
-func TLSAsset(ns string, sel interface{}) string {
-	var k tlsAssetKey
-
-	switch v := sel.(type) {
-	case monitoringv1.SecretOrConfigMap:
-		k = tlsAssetKeyFromSelector(ns, v)
-	case *v1.SecretKeySelector:
-		k = tlsAssetKeyFromSecretSelector(ns, v)
-	default:
-		return ""
-	}
-
-	return k.toString()
-}
-
 func (k tlsAssetKey) toString() string {
 	return fmt.Sprintf("%d_%s_%s_%s", k.from, k.ns, k.name, k.key)
 }
@@ -111,7 +96,7 @@ func (s *StoreBuilder) addTLSAssets(ctx context.Context, ns string, tlsConfig mo
 	if tlsConfig.KeySecret != nil {
 		key, err = s.GetSecretKey(ctx, ns, *tlsConfig.KeySecret)
 		if err != nil {
-			return fmt.Errorf("failed to get key %s/%s: %w", tlsConfig.KeySecret.LocalObjectReference.Name, tlsConfig.KeySecret.Key, err)
+			return fmt.Errorf("failed to get key %s/%s: %w", tlsConfig.KeySecret.Name, tlsConfig.KeySecret.Key, err)
 		}
 	}
 
@@ -135,7 +120,7 @@ func (s *StoreBuilder) addTLSAssets(ctx context.Context, ns string, tlsConfig mo
 			return fmt.Errorf(
 				"cert %s, key <%s/%s>: %w",
 				tlsConfig.Cert.String(),
-				tlsConfig.KeySecret.LocalObjectReference.Name, tlsConfig.KeySecret.Key,
+				tlsConfig.KeySecret.Name, tlsConfig.KeySecret.Key,
 				err)
 		}
 

@@ -59,7 +59,6 @@ func NewLogger(c Config) (log.Logger, error) {
 	)
 
 	// For log levels other than debug, the klog verbosity level is 0.
-	klogv2.ClampLevel(0)
 	switch strings.ToLower(c.Level) {
 	case LevelAll:
 		lvlOption = loglevel.AllowAll()
@@ -92,8 +91,6 @@ func NewLogger(c Config) (log.Logger, error) {
 	logger = loglevel.NewFilter(logger, lvlOption)
 	logger = log.With(logger, "ts", log.DefaultTimestampUTC)
 	logger = log.With(logger, "caller", log.DefaultCaller)
-
-	klogv2.SetLogger(log.With(logger, "component", "k8s_client_runtime"))
 
 	return logger, nil
 }
