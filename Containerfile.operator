@@ -7,7 +7,7 @@ WORKDIR /workspace
 COPY . .
 
 RUN go mod vendor
-RUN GOOS=linux GOFLAGS="" GOARCH=amd64 CGO_ENABLED=1 go build -o operator cmd/operator/main.go
+RUN GOOS=linux GOFLAGS="" GOARCH=amd64 CGO_ENABLED=1 go build -o operator ./cmd/operator/
 
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
