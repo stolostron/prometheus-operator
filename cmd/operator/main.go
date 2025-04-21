@@ -24,7 +24,7 @@ import (
 	"net/http/pprof"
 	"os"
 	"os/signal"
-	"regexp"
+	"strings"
 	"syscall"
 
 	"github.com/blang/semver/v4"

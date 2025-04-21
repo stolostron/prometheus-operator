@@ -23,7 +23,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/go-kit/log"
 	"github.com/kylelemons/godebug/pretty"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"

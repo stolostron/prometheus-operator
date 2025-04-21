@@ -11,8 +11,6 @@ GODEBUG :=
 
 CONTAINER_CLI ?= docker
 
-CONTAINER_CLI ?= docker
-
 GO_PKG=github.com/prometheus-operator/prometheus-operator
 IMAGE_OPERATOR?=quay.io/prometheus-operator/prometheus-operator
 IMAGE_RELOADER?=quay.io/prometheus-operator/prometheus-config-reloader
@@ -22,8 +20,6 @@ VERSION?=$(shell cat VERSION | tr -d " \t\n\r")
 GO_VERSION?=$(shell grep golang-version .github/env | sed "s/golang-version=//")
 
 CRD_OPTIONS ?= "crd:crdVersions=v1"
-
-KIND_CONTEXT ?= e2e
 
 KIND_CONTEXT ?= e2e
 
@@ -221,9 +217,9 @@ update-go-deps:
 .PHONY: tidy
 tidy:
 	go mod tidy -v
-	cd pkg/apis/monitoring && go mod tidy -v -modfile=go.mod -compat=1.18
-	cd pkg/client && go mod tidy -v -modfile=go.mod -compat=1.18
-	cd scripts && go mod tidy -v -modfile=go.mod -compat=1.18
+	cd pkg/apis/monitoring && go mod tidy -v -modfile=go.mod
+	cd pkg/client && go mod tidy -v -modfile=go.mod
+	cd scripts && go mod tidy -v -modfile=go.mod
 
 .PHONY: generate
 generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/thanos/thanos.yaml example/admission-webhook example/alertmanager-crd-conversion generate-docs image-builder-version
@@ -246,9 +242,6 @@ generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET
 generate-tls-certs:
 	mkdir -p $(CERTS_DIR) && \
 	(cd scripts && GOOS=$(OS) GOARCH=$(GOARCH) go run -v ./certs/.)
-
-.PHONY: generate-docs
-generate-docs: $(shell find Documentation -type f)
 
 .PHONY: generate-docs
 generate-docs: $(shell find Documentation -type f)

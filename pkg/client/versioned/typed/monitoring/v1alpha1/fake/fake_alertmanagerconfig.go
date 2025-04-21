@@ -49,25 +49,3 @@ func newFakeAlertmanagerConfigs(fake *FakeMonitoringV1alpha1, namespace string) 
 		fake,
 	}
 }
-
-// Apply takes the given apply declarative configuration, applies it and returns the applied alertmanagerConfig.
-func (c *FakeAlertmanagerConfigs) Apply(ctx context.Context, alertmanagerConfig *monitoringv1alpha1.AlertmanagerConfigApplyConfiguration, opts v1.ApplyOptions) (result *v1alpha1.AlertmanagerConfig, err error) {
-	if alertmanagerConfig == nil {
-		return nil, fmt.Errorf("alertmanagerConfig provided to Apply must not be nil")
-	}
-	data, err := json.Marshal(alertmanagerConfig)
-	if err != nil {
-		return nil, err
-	}
-	name := alertmanagerConfig.Name
-	if name == nil {
-		return nil, fmt.Errorf("alertmanagerConfig.Name must be provided to Apply")
-	}
-	obj, err := c.Fake.
-		Invokes(testing.NewPatchSubresourceAction(alertmanagerconfigsResource, c.ns, *name, types.ApplyPatchType, data), &v1alpha1.AlertmanagerConfig{})
-
-	if obj == nil {
-		return nil, err
-	}
-	return obj.(*v1alpha1.AlertmanagerConfig), err
-}

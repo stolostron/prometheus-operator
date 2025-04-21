@@ -626,111 +626,6 @@ func (cg *ConfigGenerator) addSigv4ToYaml(cfg yaml.MapSlice,
 	return cg.WithKeyVals("component", strings.Split(assetStoreKey, "/")[0]).AppendMapItem(cfg, "sigv4", sigv4Cfg)
 }
 
-func mergeSafeTLSConfigWithScrapeClass(tlsConfig *monitoringv1.SafeTLSConfig, scrapeClass monitoringv1.ScrapeClass) *monitoringv1.TLSConfig {
-	if tlsConfig == nil || reflect.ValueOf(*tlsConfig).IsZero() {
-		return mergeTLSConfigWithScrapeClass(nil, scrapeClass)
-	}
-
-	return mergeTLSConfigWithScrapeClass(&monitoringv1.TLSConfig{SafeTLSConfig: *tlsConfig}, scrapeClass)
-}
-
-func mergeTLSConfigWithScrapeClass(tlsConfig *monitoringv1.TLSConfig, scrapeClass monitoringv1.ScrapeClass) *monitoringv1.TLSConfig {
-	if tlsConfig == nil {
-		return scrapeClass.TLSConfig
-	}
-
-	if scrapeClass.TLSConfig == nil {
-		return tlsConfig
-	}
-
-	if tlsConfig.CAFile == "" && tlsConfig.SafeTLSConfig.CA == (monitoringv1.SecretOrConfigMap{}) {
-		tlsConfig.CAFile = scrapeClass.TLSConfig.CAFile
-	}
-
-	if tlsConfig.CertFile == "" && tlsConfig.SafeTLSConfig.Cert == (monitoringv1.SecretOrConfigMap{}) {
-		tlsConfig.CertFile = scrapeClass.TLSConfig.CertFile
-	}
-
-	if tlsConfig.KeyFile == "" && tlsConfig.SafeTLSConfig.KeySecret == nil {
-		tlsConfig.KeyFile = scrapeClass.TLSConfig.KeyFile
-	}
-
-	return tlsConfig
-}
-
-func (cg *ConfigGenerator) addBasicAuthToYaml(
-	cfg yaml.MapSlice,
-	store assets.StoreGetter,
-	basicAuth *monitoringv1.BasicAuth,
-) yaml.MapSlice {
-	if basicAuth == nil {
-		return cfg
-	}
-
-	username, err := store.GetSecretKey(basicAuth.Username)
-	if err != nil {
-		level.Error(cg.logger).Log("err", fmt.Sprintf("invalid username ref: %s", err))
-	}
-
-	password, err := store.GetSecretKey(basicAuth.Password)
-	if err != nil {
-		level.Error(cg.logger).Log("err", fmt.Sprintf("invalid password ref: %s", err))
-	}
-
-	auth := yaml.MapSlice{
-		yaml.MapItem{Key: "username", Value: string(username)},
-		yaml.MapItem{Key: "password", Value: string(password)},
-	}
-
-	return cg.AppendMapItem(cfg, "basic_auth", auth)
-}
-
-func (cg *ConfigGenerator) addSigv4ToYaml(cfg yaml.MapSlice,
-	assetStoreKey string,
-	store assets.StoreGetter,
-	sigv4 *monitoringv1.Sigv4,
-) yaml.MapSlice {
-	if sigv4 == nil {
-		return cfg
-	}
-
-	sigv4Cfg := yaml.MapSlice{}
-	if sigv4.Region != "" {
-		sigv4Cfg = append(sigv4Cfg, yaml.MapItem{Key: "region", Value: sigv4.Region})
-	}
-
-	if sigv4.AccessKey != nil && sigv4.SecretKey != nil {
-		var ak, sk []byte
-
-		ak, err := store.GetSecretKey(*sigv4.AccessKey)
-		if err != nil {
-			level.Error(cg.logger).Log("err", fmt.Sprintf("invalid SigV4 access key ref: %s", err))
-		}
-
-		sk, err = store.GetSecretKey(*sigv4.SecretKey)
-		if err != nil {
-			level.Error(cg.logger).Log("err", fmt.Sprintf("invalid SigV4 secret key ref: %s", err))
-		}
-
-		if len(ak) > 0 && len(sk) > 0 {
-			sigv4Cfg = append(sigv4Cfg,
-				yaml.MapItem{Key: "access_key", Value: string(ak)},
-				yaml.MapItem{Key: "secret_key", Value: string(sk)},
-			)
-		}
-	}
-
-	if sigv4.Profile != "" {
-		sigv4Cfg = append(sigv4Cfg, yaml.MapItem{Key: "profile", Value: sigv4.Profile})
-	}
-
-	if sigv4.RoleArn != "" {
-		sigv4Cfg = append(sigv4Cfg, yaml.MapItem{Key: "role_arn", Value: sigv4.RoleArn})
-	}
-
-	return cg.WithKeyVals("component", strings.Split(assetStoreKey, "/")[0]).AppendMapItem(cfg, "sigv4", sigv4Cfg)
-}
-
 func (cg *ConfigGenerator) addSafeAuthorizationToYaml(
 	cfg yaml.MapSlice,
 	store assets.StoreGetter,
@@ -992,7 +887,6 @@ func (cg *ConfigGenerator) GenerateServerConfiguration(
 		}
 	}
 
-	// Global config
 	cfg := yaml.MapSlice{}
 
 	// Global config
@@ -2415,7 +2309,6 @@ func (cg *ConfigGenerator) generateAlertmanagerConfig(alerting *monitoringv1.Ale
 	}
 
 	alertmanagerConfigs := make([]yaml.MapSlice, 0, len(alerting.Alertmanagers))
-	s := store.ForNamespace(cg.prom.GetObjectMeta().GetNamespace())
 	for i, am := range alerting.Alertmanagers {
 		if am.Scheme == "" {
 			am.Scheme = "http"
@@ -2563,8 +2456,6 @@ func (cg *ConfigGenerator) generateAdditionalScrapeConfigs(
 
 func (cg *ConfigGenerator) generateRemoteReadConfig(remoteRead []monitoringv1.RemoteReadSpec, s assets.StoreGetter) yaml.MapItem {
 	cfgs := []yaml.MapSlice{}
-	objMeta := cg.prom.GetObjectMeta()
-	s := store.ForNamespace(objMeta.GetNamespace())
 
 	for _, spec := range remoteRead {
 		cfg := yaml.MapSlice{

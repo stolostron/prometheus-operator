@@ -21,8 +21,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/go-kit/log"
-	"github.com/go-kit/log/level"
 	"github.com/mitchellh/hashstructure"
 	"github.com/prometheus/client_golang/prometheus"
 	appsv1 "k8s.io/api/apps/v1"
@@ -149,15 +147,6 @@ func New(ctx context.Context, restConfig *rest.Config, c operator.Config, logger
 	for _, opt := range options {
 		opt(o)
 	}
-
-	o.rr = operator.NewResourceReconciler(
-		o.logger,
-		o,
-		o.metrics,
-		monitoringv1.ThanosRulerKind,
-		r,
-		o.controllerID,
-	)
 
 	o.cmapInfs, err = informers.NewInformersForResource(
 		informers.NewMetadataInformerFactory(
@@ -467,10 +456,6 @@ func (o *Operator) sync(ctx context.Context, key string) error {
 
 	logger := o.logger.With("key", key)
 	logger.Info("sync thanos-ruler")
-
-	if err := operator.CheckStorageClass(ctx, o.canReadStorageClass, o.kclient, tr.Spec.Storage); err != nil {
-		return err
-	}
 
 	if err := operator.CheckStorageClass(ctx, o.canReadStorageClass, o.kclient, tr.Spec.Storage); err != nil {
 		return err

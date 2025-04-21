@@ -2451,6 +2451,9 @@ func TestSettingHonorLabels(t *testing.T) {
 				ObjectMeta: metav1.ObjectMeta{
 					Name:      "testservicemonitor1",
 					Namespace: "default",
+					Labels: map[string]string{
+						"group": "group1",
+					},
 				},
 				Spec: monitoringv1.ServiceMonitorSpec{
 					TargetLabels: []string{"example", "env"},

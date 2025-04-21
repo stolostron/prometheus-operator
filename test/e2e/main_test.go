@@ -477,37 +477,3 @@ func testMultipleOperators(testCtx *operatorFramework.TestCtx) func(t *testing.T
 		}
 	}
 }
-
-// TestIsManagedByController test prometheus operator managing object with correct ControlerID.
-func testMultipleOperators(testCtx *operatorFramework.TestCtx) func(t *testing.T) {
-	return func(t *testing.T) {
-		skipPrometheusTests(t)
-
-		ns := framework.CreateNamespace(context.Background(), t, testCtx)
-		// Create operator-2 in a new ns and set controller-id.
-		finalizers, err := framework.CreateOrUpdatePrometheusOperatorWithOpts(context.Background(),
-			operatorFramework.PrometheusOperatorOpts{
-				Namespace:           ns,
-				ClusterRoleBindings: true,
-				EnableScrapeConfigs: true,
-				AdditionalArgs:      []string{testControllerID},
-			})
-		if err != nil {
-			t.Fatal(err)
-		}
-
-		for _, f := range finalizers {
-			testCtx.AddFinalizerFn(f)
-		}
-
-		testFuncs := map[string]func(t *testing.T){
-			"PrometheusServer": testMultipleOperatorsPrometheusServer,
-			"PrometheusAgent":  testMultipleOperatorsPrometheusAgent,
-			"AlertManager":     testMultipleOperatorsAlertManager,
-			"ThanosRuler":      testMultipleOperatorsThanosRuler,
-		}
-		for name, f := range testFuncs {
-			t.Run(name, f)
-		}
-	}
-}

@@ -1951,12 +1951,6 @@ func (r *receiver) sanitize(amVersion semver.Version, logger *slog.Logger) error
 		}
 	}
 
-	for _, conf := range r.EmailConfigs {
-		if err := conf.sanitize(amVersion, withLogger); err != nil {
-			return err
-		}
-	}
-
 	for _, conf := range r.OpsgenieConfigs {
 		if err := conf.sanitize(amVersion, withLogger); err != nil {
 			return err

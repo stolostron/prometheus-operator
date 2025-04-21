@@ -87,7 +87,7 @@ func NewTLSAssetSecret(p monitoringv1.PrometheusInterface, config Config) *v1.Se
 // the RemoteWriteSpec child fields.
 // Reference:
 // https://github.com/prometheus/prometheus/blob/main/docs/configuration/configuration.md#remote_write
-func ValidateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
+func validateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
 	var nonNilFields []string
 	for k, v := range map[string]interface{}{
 		"basicAuth":     spec.BasicAuth,
@@ -133,119 +133,6 @@ func ValidateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
 	}
 
 	return spec.ProxyConfig.Validate()
-}
-
-// Process will determine the Status of a Prometheus resource (server or agent) depending on its current state in the cluster.
-func (sr *StatusReporter) Process(ctx context.Context, p monitoringv1.PrometheusInterface, key string) (*monitoringv1.PrometheusStatus, error) {
-
-	commonFields := p.GetCommonPrometheusFields()
-	pStatus := monitoringv1.PrometheusStatus{
-		Paused: commonFields.Paused,
-	}
-
-	var (
-		availableStatus    monitoringv1.ConditionStatus = monitoringv1.ConditionTrue
-		availableReason    string
-		availableCondition = monitoringv1.Condition{
-			Type: monitoringv1.Available,
-			LastTransitionTime: metav1.Time{
-				Time: time.Now().UTC(),
-			},
-			ObservedGeneration: p.GetObjectMeta().GetGeneration(),
-		}
-		messages []string
-		replicas = 1
-	)
-
-	if commonFields.Replicas != nil {
-		replicas = int(*commonFields.Replicas)
-	}
-
-	for shard := range ExpectedStatefulSetShardNames(p) {
-		ssetName := KeyToStatefulSetKey(p, key, shard)
-
-		obj, err := sr.SsetInfs.Get(ssetName)
-		if err != nil {
-			if apierrors.IsNotFound(err) {
-				// Statefulset hasn't been created or is already deleted.
-				availableStatus = monitoringv1.ConditionFalse
-				availableReason = "StatefulSetNotFound"
-				messages = append(messages, fmt.Sprintf("shard %d: statefulset %s not found", shard, ssetName))
-				pStatus.ShardStatuses = append(
-					pStatus.ShardStatuses,
-					monitoringv1.ShardStatus{
-						ShardID: strconv.Itoa(shard),
-					})
-
-				continue
-			}
-
-			return nil, fmt.Errorf("failed to retrieve statefulset: %w", err)
-		}
-
-		sset := obj.(*appsv1.StatefulSet).DeepCopy()
-		if sr.Rr.DeletionInProgress(sset) {
-			continue
-		}
-
-		stsReporter, err := operator.NewStatefulSetReporter(ctx, sr.Kclient, sset)
-		if err != nil {
-			return nil, fmt.Errorf("failed to retrieve statefulset state: %w", err)
-		}
-
-		pStatus.Replicas += int32(len(stsReporter.Pods))
-		pStatus.UpdatedReplicas += int32(len(stsReporter.UpdatedPods()))
-		pStatus.AvailableReplicas += int32(len(stsReporter.ReadyPods()))
-		pStatus.UnavailableReplicas += int32(len(stsReporter.Pods) - len(stsReporter.ReadyPods()))
-
-		pStatus.ShardStatuses = append(
-			pStatus.ShardStatuses,
-			monitoringv1.ShardStatus{
-				ShardID:             strconv.Itoa(shard),
-				Replicas:            int32(len(stsReporter.Pods)),
-				UpdatedReplicas:     int32(len(stsReporter.UpdatedPods())),
-				AvailableReplicas:   int32(len(stsReporter.ReadyPods())),
-				UnavailableReplicas: int32(len(stsReporter.Pods) - len(stsReporter.ReadyPods())),
-			},
-		)
-
-		if len(stsReporter.ReadyPods()) >= replicas {
-			// All pods are ready (or the desired number of replicas is zero).
-			continue
-		}
-
-		switch {
-		case len(stsReporter.ReadyPods()) == 0:
-			availableReason = "NoPodReady"
-			availableStatus = monitoringv1.ConditionFalse
-		case availableCondition.Status != monitoringv1.ConditionFalse:
-			availableReason = "SomePodsNotReady"
-			availableStatus = monitoringv1.ConditionDegraded
-		}
-
-		for _, p := range stsReporter.Pods {
-			if m := p.Message(); m != "" {
-				messages = append(messages, fmt.Sprintf("shard %d: pod %s: %s", shard, p.Name, m))
-			}
-		}
-	}
-
-	pStatus.Conditions = operator.UpdateConditions(
-		pStatus.Conditions,
-		monitoringv1.Condition{
-			Type:    monitoringv1.Available,
-			Status:  availableStatus,
-			Reason:  availableReason,
-			Message: strings.Join(messages, "\n"),
-			LastTransitionTime: metav1.Time{
-				Time: time.Now().UTC(),
-			},
-			ObservedGeneration: p.GetObjectMeta().GetGeneration(),
-		},
-		sr.Reconciliations.GetCondition(key, p.GetObjectMeta().GetGeneration()),
-	)
-
-	return &pStatus, nil
 }
 
 // Process will determine the Status of a Prometheus resource (server or agent) depending on its current state in the cluster.

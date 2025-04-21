@@ -330,49 +330,6 @@ func TestTracingFile(t *testing.T) {
 	}
 }
 
-func TestTracingFile(t *testing.T) {
-	testPath := "/vault/secret/config.yaml"
-	testKey := "thanos-tracing-config-secret"
-
-	sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
-		ObjectMeta: metav1.ObjectMeta{},
-		Spec: monitoringv1.ThanosRulerSpec{
-			QueryEndpoints:    emptyQueryEndpoints,
-			TracingConfigFile: testPath,
-			TracingConfig: &v1.SecretKeySelector{
-				Key: testKey,
-			},
-		},
-	}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
-	if err != nil {
-		t.Fatalf("Unexpected error while making StatefulSet: %v", err)
-	}
-
-	{
-		var containsArgConfigFile, containsArgConfig bool
-		expectedArgConfigFile := "--tracing.config-file=" + testPath
-		expectedArgConfig := "--tracing.config=$(TRACING_CONFIG)"
-		for _, container := range sset.Spec.Template.Spec.Containers {
-			if container.Name == "thanos-ruler" {
-				for _, arg := range container.Args {
-					if arg == expectedArgConfigFile {
-						containsArgConfigFile = true
-					}
-					if arg == expectedArgConfig {
-						containsArgConfig = true
-					}
-				}
-			}
-		}
-		if !containsArgConfigFile {
-			t.Fatalf("Thanos ruler is missing expected argument: %s", expectedArgConfigFile)
-		}
-		if containsArgConfig {
-			t.Fatalf("Thanos ruler should not contain argument: %s", expectedArgConfig)
-		}
-	}
-}
-
 func TestObjectStorage(t *testing.T) {
 	const (
 		secretName = "thanos-objstore-config-secret"
@@ -886,24 +843,6 @@ func TestStatefulSetServiceName(t *testing.T) {
 	require.Equal(t, expect, spec.ServiceName)
 }
 
-func TestStatefulSetServiceName(t *testing.T) {
-	tr := monitoringv1.ThanosRuler{
-		Spec: monitoringv1.ThanosRulerSpec{
-			QueryEndpoints: emptyQueryEndpoints,
-		},
-	}
-
-	// assert set correctly
-	expect := governingServiceName
-	spec, err := makeStatefulSetSpec(&tr, defaultTestConfig, nil, &operator.ShardedSecret{})
-	if err != nil {
-		t.Fatal(err)
-	}
-	if spec.ServiceName != expect {
-		t.Fatalf("expected ServiceName to be %s but got %s", expect, spec.ServiceName)
-	}
-}
-
 func TestStatefulSetPVC(t *testing.T) {
 	labels := map[string]string{
 		"testlabel": "testlabelvalue",
@@ -1103,40 +1042,5 @@ func TestStatefulSetenableServiceLinks(t *testing.T) {
 		} else {
 			require.Nil(t, sset.Spec.Template.Spec.EnableServiceLinks, "expected enableServiceLinks to be nil")
 		}
-	}
-}
-
-func TestThanosVersion(t *testing.T) {
-	thanosBaseImage := defaultTestConfig.ThanosDefaultBaseImage
-	for _, tc := range []struct {
-		version       string
-		expectedImage string
-		expectedError bool
-	}{
-		{"v0.29.0", thanosBaseImage + ":" + "v0.29.0", false},
-		{"0.29.0", thanosBaseImage + ":" + "0.29.0", false},
-		{"", thanosBaseImage + ":" + operator.DefaultThanosVersion, false},
-		{"0.29.0-0123", "", true},
-		{"0.29.0.DEV", "", true},
-	} {
-		t.Run(tc.version, func(t *testing.T) {
-			sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
-				Spec: monitoringv1.ThanosRulerSpec{
-					QueryEndpoints: emptyQueryEndpoints,
-					Version:        tc.version,
-				},
-			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
-
-			if tc.expectedError && err == nil {
-				t.Fatal("expected error but got nil")
-			}
-
-			if !tc.expectedError {
-				image := sset.Spec.Template.Spec.Containers[0].Image
-				if image != tc.expectedImage {
-					t.Fatalf("Unexpected container image.\n\nExpected: %s\n\nGot: %s", tc.expectedImage, image)
-				}
-			}
-		})
 	}
 }

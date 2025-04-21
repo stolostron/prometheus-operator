@@ -202,7 +202,7 @@ func (f *Framework) CreateAlertmanagerAndWaitUntilReady(ctx context.Context, a *
 
 	a, err = f.WaitForAlertmanagerReady(ctx, a)
 	if err != nil {
-		return nil, fmt.Errorf("failed to patch Alertmanager %s/%s: %w", ns, name, err)
+		return nil, err
 	}
 
 	return a, nil
@@ -329,49 +329,6 @@ func (f *Framework) ScaleAlertmanagerAndWaitUntilReady(ctx context.Context, name
 	}
 
 	return a, nil
-}
-
-func (f *Framework) PatchAlertmanager(ctx context.Context, name, ns string, spec monitoringv1.AlertmanagerSpec) (*monitoringv1.Alertmanager, error) {
-	b, err := json.Marshal(
-		&monitoringv1.Alertmanager{
-			TypeMeta: metav1.TypeMeta{
-				Kind:       monitoringv1.AlertmanagersKind,
-				APIVersion: schema.GroupVersion{Group: monitoring.GroupName, Version: monitoringv1.Version}.String(),
-			},
-			Spec: spec,
-		},
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal Alertmanager spec: %w", err)
-	}
-
-	p, err := f.MonClientV1.Alertmanagers(ns).Patch(
-		ctx,
-		name,
-		types.ApplyPatchType,
-		b,
-		metav1.PatchOptions{
-			Force:        ptr.To(true),
-			FieldManager: "e2e-test",
-		},
-	)
-
-	if err != nil {
-		return nil, err
-	}
-
-	return p, nil
-}
-
-func (f *Framework) ScaleAlertmanagerAndWaitUntilReady(ctx context.Context, name, ns string, replicas int32) (*monitoringv1.Alertmanager, error) {
-	return f.PatchAlertmanagerAndWaitUntilReady(
-		ctx,
-		name,
-		ns,
-		monitoringv1.AlertmanagerSpec{
-			Replicas: ptr.To(replicas),
-		},
-	)
 }
 
 func (f *Framework) DeleteAlertmanagerAndWaitUntilGone(ctx context.Context, ns, name string) error {

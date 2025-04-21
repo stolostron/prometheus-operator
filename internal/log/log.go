@@ -23,7 +23,6 @@ import (
 
 	"github.com/go-kit/log"
 	loglevel "github.com/go-kit/log/level"
-	klogv2 "k8s.io/klog/v2"
 )
 
 const (
@@ -63,9 +62,6 @@ func NewLogger(c Config) (log.Logger, error) {
 	case LevelAll:
 		lvlOption = loglevel.AllowAll()
 	case LevelDebug:
-		// When the log level is set to debug, we set the klog verbosity level to 6.
-		// Above level 6, the k8s client would log bearer tokens in clear-text.
-		klogv2.ClampLevel(6)
 		lvlOption = loglevel.AllowDebug()
 	case LevelInfo:
 		lvlOption = loglevel.AllowInfo()

@@ -265,7 +265,6 @@ func TestAddBasicAuth(t *testing.T) {
 			require.Equal(t, tc.expectedUser, string(b), "expecting username value %q, got %q", tc.expectedUser, string(b))
 		})
 	}
-
 }
 
 func TestProxyCongfig(t *testing.T) {
