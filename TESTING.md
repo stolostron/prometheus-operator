@@ -1,3 +1,15 @@
+---
+weight: 502
+toc: true
+title: Testing
+menu:
+    docs:
+        parent: community
+lead: ""
+images: []
+draft: false
+---
+
 When contributing code to Prometheus-Operator, you'll notice that every Pull Request will run against an extensive test suite. Among an extensive list of benefits that tests brings to the Project's overall health and reliability, it can be the reviewer's and contributors's best friend during development:
 
 * Test cases serve as documentation, providing insights into the expected behavior of the software.
@@ -62,7 +74,7 @@ To run e2e-tests locally, first start a Kubernetes cluster. We recommend [KinD](
 
 For manual testing, you can use the utility script [scripts/run-external.sh](scripts/run-external.sh), it will check all the requirements and run your local version of the Prometheus Operator on your Kind cluster:
 
-```
+```shell
 ./scripts/run-external.sh -c
 ```
 
@@ -73,7 +85,7 @@ For manual testing, you can use the utility script [scripts/run-external.sh](scr
 Before running automated end-to-end tests, you need run the following command to make images and load it in your local cluster:
 
 ```shell
-KIND_CONTEXT=e2e make test-e2e-image
+KIND_CONTEXT=e2e make test-e2e-images
 ```
 
 #### Using podman with Kind
@@ -87,14 +99,14 @@ podman machine init --cpus=4 --memory=8192 --rootful --now
 Before running automated end-to-end tests, you need run the following command to make images and load it in your local cluster:
 
 ```shell
-CONTAINER_CLI=podman KIND_CONTEXT=e2e make test-e2e-image
+CONTAINER_CLI=podman KIND_CONTEXT=e2e make test-e2e-images
 ```
 
 ### Running the automated E2E Tests
 
 To run the automated end-to-end tests, run the following command:
 
-```
+```shell
 make test-e2e
 ```
 
@@ -116,6 +128,7 @@ The following Makefile targets can run specific end-to-end tests:
 * `make test-e2e-prometheus-all-namespaces` - Will run regular Prometheus tests.
 * `make test-e2e-operator-upgrade` - Will validate that a monitoring stack managed by the previous version of Prometheus-Operator will continue to work after an upgrade to the current version.
 * `make test-e2e-prometheus-upgrade` - Will validate that a series of Prometheus versions can be sequentially upgraded.
+* `make test-e2e-feature-gates` - Will validate the features behind a gate.
 
 ### Running only one end-to-end test
 

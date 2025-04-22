@@ -60,9 +60,9 @@ func KeyToStatefulSetKey(p monitoringv1.PrometheusInterface, key string, shard i
 
 func statefulSetNameFromPrometheusName(p monitoringv1.PrometheusInterface, name string, shard int) string {
 	if shard == 0 {
-		return fmt.Sprintf("%s-%s", prefix(p), name)
+		return fmt.Sprintf("%s-%s", Prefix(p), name)
 	}
-	return fmt.Sprintf("%s-%s-shard-%d", prefix(p), name, shard)
+	return fmt.Sprintf("%s-%s-shard-%d", Prefix(p), name, shard)
 }
 
 func NewTLSAssetSecret(p monitoringv1.PrometheusInterface, config Config) *v1.Secret {
@@ -82,12 +82,12 @@ func NewTLSAssetSecret(p monitoringv1.PrometheusInterface, config Config) *v1.Se
 	return s
 }
 
-// ValidateRemoteWriteSpec checks that mutually exclusive configurations are not
+// validateRemoteWriteSpec checks that mutually exclusive configurations are not
 // included in the Prometheus remoteWrite configuration section, while also validating
 // the RemoteWriteSpec child fields.
 // Reference:
 // https://github.com/prometheus/prometheus/blob/main/docs/configuration/configuration.md#remote_write
-func ValidateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
+func validateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
 	var nonNilFields []string
 	for k, v := range map[string]interface{}{
 		"basicAuth":     spec.BasicAuth,
@@ -99,6 +99,7 @@ func ValidateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
 		if reflect.ValueOf(v).IsNil() {
 			continue
 		}
+
 		nonNilFields = append(nonNilFields, fmt.Sprintf("%q", k))
 	}
 
@@ -131,7 +132,7 @@ func ValidateRemoteWriteSpec(spec monitoringv1.RemoteWriteSpec) error {
 		}
 	}
 
-	return nil
+	return spec.ProxyConfig.Validate()
 }
 
 // Process will determine the Status of a Prometheus resource (server or agent) depending on its current state in the cluster.

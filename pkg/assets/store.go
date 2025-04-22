@@ -101,16 +101,11 @@ func (s *StoreBuilder) AddBasicAuth(ctx context.Context, ns string, ba *monitori
 }
 
 // AddProxyConfig processes the given *ProxyConfig and adds the referenced credentials to the store.
-func (s *StoreBuilder) AddProxyConfig(ctx context.Context, ns string, pc monitoringv1.ProxyConfig) error {
-	if len(pc.ProxyConnectHeader) <= 0 {
-		return nil
-	}
-
+func (s *StoreBuilder) AddProxyConfig(ctx context.Context, namespace string, pc monitoringv1.ProxyConfig) error {
 	for k, v := range pc.ProxyConnectHeader {
-		for _, v1 := range v {
-			_, err := s.GetSecretKey(ctx, ns, v1)
-			if err != nil {
-				return fmt.Errorf("failed to get proxy config connect header: %s %w", k, err)
+		for index, sel := range v {
+			if _, err := s.GetSecretKey(ctx, namespace, sel); err != nil {
+				return fmt.Errorf("header[%s][%d]: %w", k, index, err)
 			}
 		}
 	}
@@ -136,6 +131,16 @@ func (s *StoreBuilder) AddOAuth2(ctx context.Context, ns string, oauth2 *monitor
 	_, err = s.GetSecretKey(ctx, ns, oauth2.ClientSecret)
 	if err != nil {
 		return fmt.Errorf("failed to get oauth2 client secret: %w", err)
+	}
+
+	err = s.AddProxyConfig(ctx, ns, oauth2.ProxyConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get oauth2 proxyConfig: %w", err)
+	}
+
+	err = s.AddSafeTLSConfig(ctx, ns, oauth2.TLSConfig)
+	if err != nil {
+		return fmt.Errorf("failed to get oauth2 tlsConfig: %w", err)
 	}
 
 	return nil
@@ -367,4 +372,19 @@ func (cos *cacheOnlyStore) GetSecretOrConfigMapKey(key monitoringv1.SecretOrConf
 	default:
 		return "", nil
 	}
+}
+
+func (cos *cacheOnlyStore) TLSAsset(sel interface{}) string {
+	var k tlsAssetKey
+
+	switch v := sel.(type) {
+	case monitoringv1.SecretOrConfigMap:
+		k = tlsAssetKeyFromSelector(cos.ns, v)
+	case *v1.SecretKeySelector:
+		k = tlsAssetKeyFromSecretSelector(cos.ns, v)
+	default:
+		return ""
+	}
+
+	return k.toString()
 }
