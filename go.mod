@@ -38,7 +38,7 @@ require (
 	k8s.io/client-go v12.0.0+incompatible
 	k8s.io/component-base v0.23.3
 	k8s.io/klog/v2 v2.30.0
-	k8s.io/utils v0.0.0-20211208161948-7d6a63dca704
+	k8s.io/utils 0f33e8f1c979
 )
 
 require (
