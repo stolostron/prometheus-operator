@@ -246,7 +246,7 @@ func makeStatefulSetSpec(
 	if cpf.TSDB != nil && cpf.TSDB.OutOfOrderTimeWindow != nil &&
 		compactionDisabled(p) &&
 		cg.WithMinimumVersion("2.55.0").IsCompatible() {
-		promArgs = append(promArgs, monitoringv1.Argument{Name: "storage.tsdb.allow-overlapping-compaction"})
+		promArgs = append(promArgs, monitoringv1.Argument{Name: "no-storage.tsdb.allow-overlapping-compaction"})
 	}
 
 	var watchedDirectories []string
@@ -351,17 +351,15 @@ func makeStatefulSetSpec(
 				Annotations: podAnnotations,
 			},
 			Spec: v1.PodSpec{
-				ShareProcessNamespace:        prompkg.ShareProcessNamespace(p),
-				Containers:                   containers,
-				InitContainers:               initContainers,
-				SecurityContext:              cpf.SecurityContext,
-				ServiceAccountName:           cpf.ServiceAccountName,
-				AutomountServiceAccountToken: ptr.To(ptr.Deref(cpf.AutomountServiceAccountToken, true)),
-				NodeSelector:                 cpf.NodeSelector,
-				PriorityClassName:            cpf.PriorityClassName,
-				// Prometheus may take quite long to shut down to checkpoint existing data.
-				// Allow up to 10 minutes for clean termination.
-				TerminationGracePeriodSeconds: ptr.To(int64(600)),
+				ShareProcessNamespace:         prompkg.ShareProcessNamespace(p),
+				Containers:                    containers,
+				InitContainers:                initContainers,
+				SecurityContext:               cpf.SecurityContext,
+				ServiceAccountName:            cpf.ServiceAccountName,
+				AutomountServiceAccountToken:  ptr.To(ptr.Deref(cpf.AutomountServiceAccountToken, true)),
+				NodeSelector:                  cpf.NodeSelector,
+				PriorityClassName:             cpf.PriorityClassName,
+				TerminationGracePeriodSeconds: ptr.To(ptr.Deref(cpf.TerminationGracePeriodSeconds, prompkg.DefaultTerminationGracePeriodSeconds)),
 				Volumes:                       volumes,
 				Tolerations:                   cpf.Tolerations,
 				Affinity:                      cpf.Affinity,
