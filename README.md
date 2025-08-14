@@ -1,4 +1,4 @@
-# Prometheus Operator
+# Prometheus Operator test
 
 [![Build Status](https://github.com/prometheus-operator/prometheus-operator/workflows/ci/badge.svg)](https://github.com/prometheus-operator/prometheus-operator/actions)
 [![Go Report Card](https://goreportcard.com/badge/prometheus-operator/prometheus-operator "Go Report Card")](https://goreportcard.com/report/prometheus-operator/prometheus-operator)
