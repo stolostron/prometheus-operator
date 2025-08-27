@@ -16,3 +16,13 @@ COPY --from=builder /workspace/operator /bin/operator
 USER nobody
 
 ENTRYPOINT ["/bin/operator"]
+
+LABEL com.redhat.component="prometheus-operator" \
+  name="prometheus-operator" \
+  summary="prometheus-operator" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="data,images" \
+  io.k8s.display-name="prometheus-operator" \
+  maintainer="" \
+  description="prometheus-operator" \
+  io.k8s.description="prometheus-operator"
