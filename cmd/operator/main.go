@@ -30,11 +30,12 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
@@ -312,9 +313,9 @@ func run(fs *flag.FlagSet) int {
 
 	canEmitEvents, reasons, err := k8sutil.IsAllowed(ctx, kclient.AuthorizationV1().SelfSubjectAccessReviews(), nil,
 		k8sutil.ResourceAttribute{
-			Group:    corev1.GroupName,
-			Version:  corev1.SchemeGroupVersion.Version,
-			Resource: corev1.SchemeGroupVersion.WithResource("events").Resource,
+			Group:    eventsv1.GroupName,
+			Version:  eventsv1.SchemeGroupVersion.Version,
+			Resource: eventsv1.SchemeGroupVersion.WithResource("events").Resource,
 			Verbs:    []string{"create", "patch"},
 		})
 	if err != nil {
@@ -601,7 +602,7 @@ func run(fs *flag.FlagSet) int {
 
 	// Setup the web server.
 	mux := http.NewServeMux()
-	admit := admission.New(logger.With("component", "admissionwebhook"))
+	admit := admission.New(logger.With("component", "admissionwebhook"), model.LegacyValidation)
 	admit.Register(mux)
 
 	r.MustRegister(cfg.Gates)
