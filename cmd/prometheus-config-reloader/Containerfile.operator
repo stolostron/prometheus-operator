@@ -18,7 +18,8 @@ USER nobody
 ENTRYPOINT ["/bin/prometheus-config-reloader"]
 
 LABEL com.redhat.component="prometheus-config-reloader" \
-  name="prometheus-config-reloader" \
+  name="rhacm2/acm-prometheus-config-reloader-rhel9" \
+  cpe="cpe:/a:redhat:acm:2.15::el9" \
   summary="prometheus-config-reloader" \
   io.openshift.expose-services="" \
   io.openshift.tags="data,images" \
