@@ -11,6 +11,6 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --from=builder /workspace/operator /bin/operator
 
-USER nobody
+USER 1001
 
 ENTRYPOINT ["/bin/operator"]
