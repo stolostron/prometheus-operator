@@ -12,6 +12,6 @@ FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
 
 COPY --from=builder /workspace/prometheus-config-reloader /bin/prometheus-config-reloader
 
-USER nobody
+USER 1001
 
 ENTRYPOINT ["/bin/prometheus-config-reloader"]
