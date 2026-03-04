@@ -68,6 +68,8 @@ This is a rough outline of what a contributor's workflow looks like:
 
 Many files (documentation, manifests, ...) in this repository are auto-generated. For instance, `bundle.yaml` is generated from the *Jsonnet* files in `/jsonnet/prometheus-operator`. Before submitting a pull request, make sure that you've executed `make generate` and committed the generated changes.
 
+We also use [golangci-lint](https://golangci-lint.run/docs/) to lint the Go code (including the API definitions). Make sure to execute `make check` before creating/updating your PR.
+
 Thanks for your contributions!
 
 ### Changes to the APIs
@@ -113,6 +115,31 @@ second line is always blank, and other lines should be wrapped at 80 characters.
 This allows the message to be easier to read on GitHub as well as in various
 Git tools.
 
+## AI use policy
+
+We allow the use of AI tools when contributing to the project (issues and pull
+requests). At the same time, you need to be mindful of maintainers' time and
+attention which is why we ask you to comply with the following guidelines.
+
+### When using AI for learning
+
+* Keep in mind that while AI assistants help with navigating and understanding the code base, you need to take their claims with a grain of salt.
+* Using AI tools doesn't prevent you from becoming familiar with the code and the development workflow.
+
+### When using AI for communication
+
+* Follow the proposed template when submitting GitHub issues.
+* **Avoid verbose descriptions**, provide enough information for the maintainers to understand the request but do not overwhelm them with unrelated details.
+
+### When using AI for code contribution
+
+* Review the change by yourself before submitting the pull request.
+* Ensure that you can explain the why, what and how of the change without help from the AI tool.
+* If necessary call out the parts which are unclear to you.
+* When AI tools have contributed significant parts of the code change, communicate the information in the pull request's description and/or the commit message.
+* Don't submit changes which are unrelated to the purpose of the pull request.
+* **Avoid verbose AI-generated descriptions in PRs** keep descriptions concise, focused, and relevant to the actual changes being made.
+
 ## Local Development
 
 If you want to run Prometheus Operator on your local environment, you can follow the steps below.
@@ -125,7 +152,7 @@ If you want to run Prometheus Operator on your local environment, you can follow
 ./scripts/run-external.sh -c
 ```
 
-3. You should now be able to see the logs from the operator in your terminal. The Operator is successully running in your local system and can be debugged, checked for behaviour etc.
+3. You should now be able to see the logs from the operator in your terminal. The Operator is successfully running in your local system and can be debugged, checked for behaviour etc.
 
 Similarly, if you work on a specific branch, you can run the `scripts/run-external.sh` script in this branch to deploy it.
 

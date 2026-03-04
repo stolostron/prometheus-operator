@@ -30,11 +30,12 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"github.com/prometheus/common/model"
 	"github.com/prometheus/common/version"
 	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
 	discoveryv1 "k8s.io/api/discovery/v1"
+	eventsv1 "k8s.io/api/events/v1"
 	storagev1 "k8s.io/api/storage/v1"
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/client-go/kubernetes"
@@ -43,6 +44,7 @@ import (
 	"k8s.io/klog/v2"
 	"k8s.io/utils/ptr"
 
+	crd "github.com/prometheus-operator/prometheus-operator/example"
 	"github.com/prometheus-operator/prometheus-operator/internal/goruntime"
 	logging "github.com/prometheus-operator/prometheus-operator/internal/log"
 	"github.com/prometheus-operator/prometheus-operator/internal/metrics"
@@ -126,6 +128,7 @@ var (
 	kubeletEndpoints     bool
 	kubeletEndpointSlice bool
 	kubeletSyncPeriod    time.Duration
+	kubeletHTTPMetrics   bool
 
 	featureGates = k8sflag.NewMapStringBool(ptr.To(map[string]bool{}))
 )
@@ -148,6 +151,7 @@ func parseFlags(fs *flag.FlagSet) {
 	fs.BoolVar(&kubeletEndpointSlice, "kubelet-endpointslice", false, "Create EndpointSlice objects for kubelet targets.")
 	fs.BoolVar(&kubeletEndpoints, "kubelet-endpoints", true, "Create Endpoints objects for kubelet targets.")
 	fs.DurationVar(&kubeletSyncPeriod, "kubelet-sync-period", 3*time.Minute, "How often the operator reconciles the kubelet Endpoints and EndpointSlice objects (e.g., 10s, 2m, 1h30m).")
+	fs.BoolVar(&kubeletHTTPMetrics, "kubelet-http-metrics", true, "Include HTTP metrics port (10255) in kubelet service. Set to false if your cluster has disabled the insecure kubelet read-only port (e.g., GKE 1.32+).")
 
 	// The Prometheus config reloader image is released along with the
 	// Prometheus Operator image, tagged with the same semver version. Default to
@@ -196,6 +200,47 @@ func parseFlags(fs *flag.FlagSet) {
 	_ = fs.Parse(os.Args[1:])
 }
 
+// checkStatusSubresourcePermissions returns true when the operator has the
+// required permissions to update the status subresource of the provided
+// configuration resources.
+func checkStatusSubresourcePermissions(
+	ctx context.Context,
+	logger *slog.Logger,
+	kclient kubernetes.Interface,
+	gvrs []schema.GroupVersionResource,
+) bool {
+	ok := true
+	for _, gvr := range gvrs {
+		allowed, errs, err := k8sutil.IsAllowed(
+			ctx,
+			kclient.AuthorizationV1().SelfSubjectAccessReviews(),
+			cfg.Namespaces.AllowList.Slice(),
+			k8sutil.ResourceAttribute{
+				Group:    gvr.Group,
+				Version:  gvr.Version,
+				Resource: fmt.Sprintf("%s/status", gvr.Resource),
+				Verbs:    []string{"update"},
+			},
+		)
+		if err != nil {
+			ok = false
+			logger.Error("failed to check permissions on status subresource", "err", err, "resource", gvr.String())
+			continue
+		}
+
+		if allowed {
+			continue
+		}
+
+		ok = false
+		for _, reason := range errs {
+			logger.Error("missing permission on status subresource", "reason", reason, "resource", gvr.String())
+		}
+	}
+
+	return ok
+}
+
 func run(fs *flag.FlagSet) int {
 	parseFlags(fs)
 
@@ -204,6 +249,29 @@ func run(fs *flag.FlagSet) int {
 		return 0
 	}
 
+	// Determine command (default to "start")
+	cmd := "start"
+	if fs.NArg() > 0 {
+		cmd = fs.Arg(0)
+	}
+
+	// Route to appropriate command handler
+	switch cmd {
+	case "start":
+		return start()
+	case "crds":
+		return crds()
+	case "full-crds":
+		return fullCrds()
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", cmd)
+		fmt.Fprintln(os.Stderr, "Available commands: crds, full-crds, start")
+		return 1
+	}
+}
+
+// start runs the Prometheus Operator.
+func start() int {
 	logger, err := logging.NewLoggerSlog(logConfig)
 	if err != nil {
 		stdlog.Fatal(err)
@@ -312,9 +380,9 @@ func run(fs *flag.FlagSet) int {
 
 	canEmitEvents, reasons, err := k8sutil.IsAllowed(ctx, kclient.AuthorizationV1().SelfSubjectAccessReviews(), nil,
 		k8sutil.ResourceAttribute{
-			Group:    corev1.GroupName,
-			Version:  corev1.SchemeGroupVersion.Version,
-			Resource: corev1.SchemeGroupVersion.WithResource("events").Resource,
+			Group:    eventsv1.GroupName,
+			Version:  eventsv1.SchemeGroupVersion.Version,
+			Resource: eventsv1.SchemeGroupVersion.WithResource("events").Resource,
 			Verbs:    []string{"create", "patch"},
 		})
 	if err != nil {
@@ -390,6 +458,25 @@ func run(fs *flag.FlagSet) int {
 
 	var po *prometheuscontroller.Operator
 	if prometheusSupported {
+		if cfg.Gates.Enabled(operator.StatusForConfigurationResourcesFeature) {
+			if !checkStatusSubresourcePermissions(
+				ctx,
+				logger,
+				kclient,
+				[]schema.GroupVersionResource{
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.ServiceMonitorName),
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.PodMonitorName),
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.ProbeName),
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.PrometheusRuleName),
+				},
+			) {
+				cancel()
+				return 1
+			}
+
+			promControllerOptions = append(promControllerOptions, prometheuscontroller.WithConfigResourceStatus())
+		}
+
 		po, err = prometheuscontroller.New(ctx, restConfig, cfg, logger, r, promControllerOptions...)
 		if err != nil {
 			logger.Error("instantiating prometheus controller failed", "err", err)
@@ -452,6 +539,24 @@ func run(fs *flag.FlagSet) int {
 
 	var pao *prometheusagentcontroller.Operator
 	if prometheusAgentSupported {
+		if cfg.Gates.Enabled(operator.StatusForConfigurationResourcesFeature) {
+			if !checkStatusSubresourcePermissions(
+				ctx,
+				logger,
+				kclient,
+				[]schema.GroupVersionResource{
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.ServiceMonitorName),
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.PodMonitorName),
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.ProbeName),
+				},
+			) {
+				cancel()
+				return 1
+			}
+
+			promAgentControllerOptions = append(promAgentControllerOptions, prometheusagentcontroller.WithConfigResourceStatus())
+		}
+
 		pao, err = prometheusagentcontroller.New(ctx, restConfig, cfg, logger, r, promAgentControllerOptions...)
 		if err != nil {
 			logger.Error("instantiating prometheus-agent controller failed", "err", err)
@@ -488,6 +593,11 @@ func run(fs *flag.FlagSet) int {
 
 	var ao *alertmanagercontroller.Operator
 	if alertmanagerSupported {
+		if cfg.Gates.Enabled(operator.StatusForConfigurationResourcesFeature) {
+			// TODO: check permissions when implementing the AlertmanagerConfig status subresource.
+			alertmanagerControllerOptions = append(alertmanagerControllerOptions, alertmanagercontroller.WithConfigResourceStatus())
+		}
+
 		ao, err = alertmanagercontroller.New(ctx, restConfig, cfg, logger, r, alertmanagerControllerOptions...)
 		if err != nil {
 			logger.Error("instantiating alertmanager controller failed", "err", err)
@@ -524,6 +634,22 @@ func run(fs *flag.FlagSet) int {
 
 	var to *thanoscontroller.Operator
 	if thanosRulerSupported {
+		if cfg.Gates.Enabled(operator.StatusForConfigurationResourcesFeature) {
+			if !checkStatusSubresourcePermissions(
+				ctx,
+				logger,
+				kclient,
+				[]schema.GroupVersionResource{
+					monitoringv1.SchemeGroupVersion.WithResource(monitoringv1.PrometheusRuleName),
+				},
+			) {
+				cancel()
+				return 1
+			}
+
+			thanosControllerOptions = append(thanosControllerOptions, thanoscontroller.WithConfigResourceStatus())
+		}
+
 		to, err = thanoscontroller.New(ctx, restConfig, cfg, logger, r, thanosControllerOptions...)
 		if err != nil {
 			logger.Error("instantiating thanos controller failed", "err", err)
@@ -537,6 +663,7 @@ func run(fs *flag.FlagSet) int {
 		opts := []kubelet.ControllerOption{
 			kubelet.WithNodeAddressPriority(nodeAddressPriority.String()),
 			kubelet.WithSyncPeriod(kubeletSyncPeriod),
+			kubelet.WithHTTPMetrics(kubeletHTTPMetrics),
 		}
 
 		kubeletService := strings.Split(kubeletObject, "/")
@@ -601,7 +728,7 @@ func run(fs *flag.FlagSet) int {
 
 	// Setup the web server.
 	mux := http.NewServeMux()
-	admit := admission.New(logger.With("component", "admissionwebhook"))
+	admit := admission.New(logger.With("component", "admissionwebhook"), model.LegacyValidation)
 	admit.Register(mux)
 
 	r.MustRegister(cfg.Gates)
@@ -666,5 +793,35 @@ func run(fs *flag.FlagSet) int {
 }
 
 func main() {
-	os.Exit(run(flag.CommandLine))
+	fs := flag.NewFlagSet(os.Args[0], flag.ExitOnError)
+	fs.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage of %s:\n\n", os.Args[0])
+		fmt.Fprintf(os.Stderr, "  %s [arguments] [<command>]\n\n", os.Args[0])
+		fmt.Fprintln(os.Stderr, "Commands:")
+		fmt.Fprintln(os.Stderr, "  start      Run the operator (default)")
+		fmt.Fprintln(os.Stderr, "  crds       Print the CRDs in YAML format to standard output")
+		fmt.Fprintln(os.Stderr, "  full-crds  Print the full CRDs (with all fields) in YAML format to standard output")
+		fmt.Fprintln(os.Stderr, "")
+		fmt.Fprintln(os.Stderr, "Arguments:")
+		fs.PrintDefaults()
+	}
+	os.Exit(run(fs))
+}
+
+// crds prints all embedded CRDs to stdout.
+func crds() int {
+	if err := crd.PrintAll(os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "Error printing CRDs: %v\n", err)
+		return 1
+	}
+	return 0
+}
+
+// fullCrds prints all embedded full CRDs to stdout.
+func fullCrds() int {
+	if err := crd.PrintAllFull(os.Stdout); err != nil {
+		fmt.Fprintf(os.Stderr, "Error printing full CRDs: %v\n", err)
+		return 1
+	}
+	return 0
 }

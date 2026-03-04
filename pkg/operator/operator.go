@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"log/slog"
+	"slices"
 	"sync"
 	"time"
 
@@ -29,17 +30,16 @@ import (
 	"k8s.io/apimachinery/pkg/runtime/schema"
 	"k8s.io/apimachinery/pkg/watch"
 	"k8s.io/client-go/kubernetes"
-	typedv1 "k8s.io/client-go/kubernetes/typed/core/v1"
 	"k8s.io/client-go/tools/cache"
-	"k8s.io/client-go/tools/record"
+	"k8s.io/client-go/tools/events"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/client/versioned/scheme"
 )
 
 const (
-	PrometheusOperatorFieldManager = "PrometheusOperator"
-
+	// InvalidConfigurationEvent is the  type used for events reporting invalid
+	// configuration resources.
 	InvalidConfigurationEvent = "InvalidConfiguration"
 )
 
@@ -59,12 +59,14 @@ var (
 )
 
 type ReconciliationStatus struct {
-	err error
+	err     error
+	reason  string
+	message string
 }
 
 func (rs ReconciliationStatus) Reason() string {
 	if rs.Ok() {
-		return ""
+		return rs.reason
 	}
 
 	return "ReconciliationFailed"
@@ -72,7 +74,7 @@ func (rs ReconciliationStatus) Reason() string {
 
 func (rs ReconciliationStatus) Message() string {
 	if rs.Ok() {
-		return ""
+		return rs.message
 	}
 
 	return rs.err.Error()
@@ -131,13 +133,37 @@ func (rt *ReconciliationTracker) UpdateReferenceTracker(key string, refTracker R
 	rt.refTracker[key] = refTracker
 }
 
+// ResetStatus resets the reconciliation status for the object identified by key.
+func (rt *ReconciliationTracker) ResetStatus(key string) {
+	rt.init()
+	rt.mtx.Lock()
+	defer rt.mtx.Unlock()
+
+	rt.statusByObject[key] = ReconciliationStatus{}
+}
+
 // SetStatus updates the last reconciliation status for the object identified by key.
 func (rt *ReconciliationTracker) SetStatus(key string, err error) {
 	rt.init()
 	rt.mtx.Lock()
 	defer rt.mtx.Unlock()
 
-	rt.statusByObject[key] = ReconciliationStatus{err: err}
+	rs := rt.statusByObject[key]
+	rs.err = err
+	rt.statusByObject[key] = rs
+}
+
+// SetReasonAndMessage updates the reason and message for the object identified by key.
+// The reason and message are only used when the reconciliation returned no error.
+func (rt *ReconciliationTracker) SetReasonAndMessage(key string, reason, message string) {
+	rt.init()
+	rt.mtx.Lock()
+	defer rt.mtx.Unlock()
+
+	rs := rt.statusByObject[key]
+	rs.reason = reason
+	rs.message = message
+	rt.statusByObject[key] = rs
 }
 
 // GetStatus returns the last reconciliation status for the given object.
@@ -306,18 +332,55 @@ func NewMetrics(r prometheus.Registerer) *Metrics {
 	return &m
 }
 
-type EventRecorderFactory func(client kubernetes.Interface, component string) record.EventRecorder
+// EventRecorderFactory returns an function to create EventRecorder objects.
+type EventRecorderFactory func(client kubernetes.Interface, component string) NewEventRecorderFunc
+
+// NewEventRecorderFunc returns an EventRecorder which will automatically inject the given runtime.Object as related.
+type NewEventRecorderFunc func(related runtime.Object) *EventRecorder
+
+// EventRecorder records events which are related to the associated Object.
+type EventRecorder struct {
+	er      events.EventRecorder
+	related runtime.Object
+}
+
+func NewFakeRecorder(bufferSize int, related runtime.Object) *EventRecorder {
+	return &EventRecorder{
+		related: related,
+		er:      events.NewFakeRecorder(bufferSize),
+	}
+}
+
+// Eventf records a Kubernetes event.
+func (er *EventRecorder) Eventf(regarding runtime.Object, eventtype, reason, action, note string, args ...any) {
+	er.er.Eventf(
+		regarding,
+		er.related,
+		eventtype,
+		reason,
+		action,
+		note,
+		args...,
+	)
+}
 
 func NewEventRecorderFactory(emitEvents bool) EventRecorderFactory {
-	return func(client kubernetes.Interface, component string) record.EventRecorder {
-		eventBroadcaster := record.NewBroadcaster()
+	return func(client kubernetes.Interface, component string) NewEventRecorderFunc {
+		eventBroadcaster := events.NewBroadcaster(&events.EventSinkImpl{Interface: client.EventsV1()})
 		eventBroadcaster.StartStructuredLogging(0)
 
 		if emitEvents {
-			eventBroadcaster.StartRecordingToSink(&typedv1.EventSinkImpl{Interface: client.CoreV1().Events("")})
+			_ = eventBroadcaster.StartRecordingToSinkWithContext(context.Background())
 		}
 
-		return eventBroadcaster.NewRecorder(scheme.Scheme, v1.EventSource{Component: component})
+		eventRecorder := eventBroadcaster.NewRecorder(scheme.Scheme, component)
+
+		return func(related runtime.Object) *EventRecorder {
+			return &EventRecorder{
+				er:      eventRecorder,
+				related: related,
+			}
+		}
 	}
 }
 
@@ -507,4 +570,28 @@ func ConfigMapGVK() schema.GroupVersionKind {
 // SecretGVK returns the GroupVersionKind representing Secret objects.
 func SecretGVK() schema.GroupVersionKind {
 	return v1.SchemeGroupVersion.WithKind("Secret")
+}
+
+// SelectNamespacesFromCache returns the selected namespaces from the informer's cache.
+func SelectNamespacesFromCache(obj metav1.Object, sel *metav1.LabelSelector, nsInfs cache.SharedIndexInformer) ([]string, error) {
+	// If the selector is nil, return the object's namespace.
+	if sel == nil {
+		return []string{obj.GetNamespace()}, nil
+	}
+
+	labelSelector, err := metav1.LabelSelectorAsSelector(sel)
+	if err != nil {
+		return nil, fmt.Errorf("failed to convert namespace label selector to selector: %w", err)
+	}
+
+	var ns []string
+	err = cache.ListAll(nsInfs.GetStore(), labelSelector, func(obj any) {
+		ns = append(ns, obj.(*v1.Namespace).Name)
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list namespaces: %w", err)
+	}
+	slices.Sort(ns)
+
+	return ns, nil
 }

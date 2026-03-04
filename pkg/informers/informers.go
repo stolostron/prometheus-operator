@@ -16,7 +16,7 @@ package informers
 
 import (
 	"fmt"
-	"sort"
+	"slices"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -46,6 +46,7 @@ type FactoriesForNamespaces interface {
 // ForResource contains a slice of InformLister for a concrete resource type,
 // one per namespace.
 type ForResource struct {
+	gr        schema.GroupResource
 	informers []InformLister
 }
 
@@ -61,7 +62,7 @@ func NewInformersForResource(ifs FactoriesForNamespaces, resource schema.GroupVe
 
 func NewInformersForResourceWithTransform(ifs FactoriesForNamespaces, resource schema.GroupVersionResource, handler cache.TransformFunc) (*ForResource, error) {
 	namespaces := ifs.Namespaces().UnsortedList()
-	sort.Strings(namespaces)
+	slices.Sort(namespaces)
 
 	informers := make([]InformLister, 0, len(namespaces))
 
@@ -79,11 +80,12 @@ func NewInformersForResourceWithTransform(ifs FactoriesForNamespaces, resource s
 	}
 
 	return &ForResource{
+		gr:        resource.GroupResource(),
 		informers: informers,
 	}, nil
 }
 
-func partialObjectMetadataStrip(obj interface{}) (*v1.PartialObjectMetadata, error) {
+func partialObjectMetadataStrip(obj any) (*v1.PartialObjectMetadata, error) {
 	partialMeta, ok := obj.(*v1.PartialObjectMetadata)
 	if !ok {
 		// Don't do anything if the cast isn't successful.
@@ -116,7 +118,7 @@ func partialObjectMetadataStrip(obj interface{}) (*v1.PartialObjectMetadata, err
 // watching PartialObjectMetadata objects to reduce memory consumption.
 // See https://pkg.go.dev/k8s.io/client-go@v0.29.1/tools/cache#TransformFunc for details.
 func PartialObjectMetadataStrip(gvk schema.GroupVersionKind) cache.TransformFunc {
-	return func(obj interface{}) (interface{}, error) {
+	return func(obj any) (any, error) {
 		partialMeta, err := partialObjectMetadataStrip(obj)
 		if err != nil {
 			return obj, nil
@@ -189,13 +191,10 @@ func (w *ForResource) ListAllByNamespace(namespace string, selector labels.Selec
 }
 
 // Get invokes all wrapped informers and returns the first found runtime object.
-// It returns the first occurred error.
+// It returns a NotFound error if the object isn't found in any informer.
 func (w *ForResource) Get(name string) (runtime.Object, error) {
-	var err error
-
 	for _, inf := range w.informers {
-		var ret runtime.Object
-		ret, err = inf.Lister().Get(name)
+		ret, err := inf.Lister().Get(name)
 		if apierrors.IsNotFound(err) {
 			continue
 		}
@@ -206,7 +205,7 @@ func (w *ForResource) Get(name string) (runtime.Object, error) {
 		return ret, nil
 	}
 
-	return nil, err
+	return nil, apierrors.NewNotFound(w.gr, name)
 }
 
 // newInformerOptions returns a list option tweak function and a list of namespaces

@@ -18,6 +18,7 @@ import (
 	"context"
 	"fmt"
 	"reflect"
+	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -300,33 +301,26 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 									Name:      "config-out",
 									ReadOnly:  true,
 									MountPath: "/etc/prometheus/config_out",
-									SubPath:   "",
 								},
 								{
-									Name:             "tls-assets",
-									ReadOnly:         true,
-									MountPath:        "/etc/prometheus/certs",
-									SubPath:          "",
-									MountPropagation: nil,
-									SubPathExpr:      "",
+									Name:      "tls-assets",
+									ReadOnly:  true,
+									MountPath: "/etc/prometheus/certs",
 								},
 								{
 									Name:      "prometheus-volume-init-test-db",
 									ReadOnly:  false,
 									MountPath: "/prometheus",
-									SubPath:   "",
 								},
 								{
 									Name:      "secret-test-secret1",
 									ReadOnly:  true,
 									MountPath: "/etc/prometheus/secrets/test-secret1",
-									SubPath:   "",
 								},
 								{
 									Name:      "rules-configmap-one",
-									ReadOnly:  false,
+									ReadOnly:  true,
 									MountPath: "/etc/prometheus/rules/rules-configmap-one",
-									SubPath:   "",
 								},
 								{
 									Name:      "web-config",
@@ -385,6 +379,7 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 									LocalObjectReference: v1.LocalObjectReference{
 										Name: "rules-configmap-one",
 									},
+									Optional: ptr.To(true),
 								},
 							},
 						},
@@ -1025,26 +1020,12 @@ func TestThanosObjectStorage(t *testing.T) {
 	require.True(t, containsEnvVar, "Thanos sidecar is missing expected OBJSTORE_CONFIG env var with correct value")
 
 	{
-		var containsArg bool
 		const expectedArg = "--objstore.config=$(OBJSTORE_CONFIG)"
-		for _, arg := range sset.Spec.Template.Spec.Containers[2].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
-		}
-		require.True(t, containsArg, "Thanos sidecar is missing expected argument: %s", expectedArg)
+		require.True(t, slices.Contains(sset.Spec.Template.Spec.Containers[2].Args, expectedArg), "Thanos sidecar is missing expected argument: %s", expectedArg)
 	}
 	{
-		var containsArg bool
 		const expectedArg = "--storage.tsdb.max-block-duration=2h"
-		for _, arg := range sset.Spec.Template.Spec.Containers[0].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
-		}
-		require.True(t, containsArg, "Prometheus is missing expected argument: %s", expectedArg)
+		require.True(t, slices.Contains(sset.Spec.Template.Spec.Containers[0].Args, expectedArg), "Prometheus is missing expected argument: %s", expectedArg)
 	}
 
 	{
@@ -1083,35 +1064,25 @@ func TestThanosObjectStorageFile(t *testing.T) {
 	require.NoError(t, err)
 
 	{
-		var containsArg bool
 		expectedArg := "--objstore.config-file=" + testPath
 		for _, container := range sset.Spec.Template.Spec.Containers {
 			if container.Name == "thanos-sidecar" {
-				for _, arg := range container.Args {
-					if arg == expectedArg {
-						containsArg = true
-						break
-					}
-				}
+				require.True(t, slices.Contains(container.Args, expectedArg),
+					"Thanos sidecar is missing expected argument: %s", expectedArg)
+				break
 			}
 		}
-		require.True(t, containsArg, "Thanos sidecar is missing expected argument: %s", expectedArg)
 	}
 
 	{
-		var containsArg bool
 		const expectedArg = "--storage.tsdb.max-block-duration=2h"
 		for _, container := range sset.Spec.Template.Spec.Containers {
 			if container.Name == "prometheus" {
-				for _, arg := range container.Args {
-					if arg == expectedArg {
-						containsArg = true
-						break
-					}
-				}
+				require.True(t, slices.Contains(container.Args, expectedArg),
+					"Prometheus is missing expected argument: %s", expectedArg)
+				break
 			}
 		}
-		require.True(t, containsArg, "Prometheus is missing expected argument: %s", expectedArg)
 	}
 
 	{
@@ -1242,15 +1213,8 @@ func TestThanosTracing(t *testing.T) {
 	require.True(t, containsEnvVar, "Thanos sidecar is missing expected TRACING_CONFIG env var with correct value")
 
 	{
-		var containsArg bool
 		const expectedArg = "--tracing.config=$(TRACING_CONFIG)"
-		for _, arg := range sset.Spec.Template.Spec.Containers[2].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
-		}
-		require.True(t, containsArg, "Thanos sidecar is missing expected argument: %s", expectedArg)
+		require.True(t, slices.Contains(sset.Spec.Template.Spec.Containers[2].Args, expectedArg), "Thanos sidecar is missing expected argument: %s", expectedArg)
 	}
 }
 
@@ -1523,15 +1487,7 @@ func TestWALCompression(t *testing.T) {
 		require.NoError(t, err)
 
 		promArgs := sset.Spec.Template.Spec.Containers[0].Args
-		found := false
-		for _, flag := range promArgs {
-			if flag == test.expectedArg {
-				found = true
-				break
-			}
-		}
-
-		require.Equal(t, test.shouldContain, found)
+		require.Equal(t, test.shouldContain, slices.Contains(promArgs, test.expectedArg))
 	}
 }
 
@@ -1560,15 +1516,7 @@ func TestTSDBAllowOverlappingBlocks(t *testing.T) {
 		require.NoError(t, err)
 
 		promArgs := sset.Spec.Template.Spec.Containers[0].Args
-		found := false
-		for _, flag := range promArgs {
-			if flag == expectedArg {
-				found = true
-				break
-			}
-		}
-
-		require.Equal(t, test.shouldContain, found)
+		require.Equal(t, test.shouldContain, slices.Contains(promArgs, expectedArg))
 	}
 }
 
@@ -1626,15 +1574,7 @@ func TestTSDBAllowOverlappingCompaction(t *testing.T) {
 			require.NoError(t, err)
 
 			promArgs := sset.Spec.Template.Spec.Containers[0].Args
-			found := false
-			for _, flag := range promArgs {
-				if flag == expectedArg {
-					found = true
-					break
-				}
-			}
-
-			require.Equal(t, test.shouldContain, found)
+			require.Equal(t, test.shouldContain, slices.Contains(promArgs, expectedArg))
 		})
 	}
 }
@@ -1689,11 +1629,8 @@ func TestThanosListenLocal(t *testing.T) {
 
 			for _, exp := range tc.expected {
 				var found bool
-				for _, flag := range sset.Spec.Template.Spec.Containers[2].Args {
-					if flag == exp {
-						found = true
-						break
-					}
+				if slices.Contains(sset.Spec.Template.Spec.Containers[2].Args, exp) {
+					found = true
 				}
 
 				require.True(t, found, "Expecting argument %q but not found in %v", exp, sset.Spec.Template.Spec.Containers[2].Args)
@@ -2543,7 +2480,7 @@ func TestPrometheusAdditionalBinaryArgsDuplicate(t *testing.T) {
 }
 
 func TestPrometheusAdditionalNoPrefixArgsDuplicate(t *testing.T) {
-	expectedErrorMsg := "can't set arguments which are already managed by the operator: no-storage.tsdb.wal-compression"
+	expectedErrorMsg := "can't set arguments which are already managed by the operator: storage.tsdb.wal-compression"
 	walCompression := new(bool)
 	*walCompression = true
 
@@ -3249,5 +3186,95 @@ func TestStatefulSetenableServiceLinks(t *testing.T) {
 		} else {
 			require.Nil(t, sset.Spec.Template.Spec.EnableServiceLinks, "expected enableServiceLinks to be nil")
 		}
+	}
+}
+
+func TestStatefulPodManagementPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		podManagementPolicy *monitoringv1.PodManagementPolicyType
+		exp                 appsv1.PodManagementPolicyType
+	}{
+		{
+			podManagementPolicy: nil,
+			exp:                 appsv1.ParallelPodManagement,
+		},
+		{
+			podManagementPolicy: ptr.To(monitoringv1.ParallelPodManagement),
+			exp:                 appsv1.ParallelPodManagement,
+		},
+		{
+			podManagementPolicy: ptr.To(monitoringv1.OrderedReadyPodManagement),
+			exp:                 appsv1.OrderedReadyPodManagement,
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+				Spec: monitoringv1.PrometheusSpec{
+					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+						PodManagementPolicy: tc.podManagementPolicy,
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.exp, sset.Spec.PodManagementPolicy)
+		})
+	}
+}
+
+func TestStatefulSetUpdateStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		updateStrategy *monitoringv1.StatefulSetUpdateStrategy
+		exp            appsv1.StatefulSetUpdateStrategy
+	}{
+		{
+			updateStrategy: nil,
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.RollingUpdateStatefulSetStrategyType,
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &monitoringv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
+				},
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
+				},
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.OnDeleteStatefulSetStrategyType,
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.OnDeleteStatefulSetStrategyType,
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+				Spec: monitoringv1.PrometheusSpec{
+					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+						UpdateStrategy: tc.updateStrategy,
+					},
+				},
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.exp, sset.Spec.UpdateStrategy)
+		})
 	}
 }

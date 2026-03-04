@@ -16,6 +16,7 @@ package thanos
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 	"testing"
 
@@ -24,6 +25,7 @@ import (
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
@@ -155,6 +157,7 @@ func TestStatefulSetVolumes(t *testing.T) {
 								{
 									Name:      "rules-configmap-one",
 									MountPath: "/etc/thanos/rules/rules-configmap-one",
+									ReadOnly:  true,
 								},
 								{
 									Name:      "additional-volume",
@@ -201,23 +204,20 @@ func TestStatefulSetVolumes(t *testing.T) {
 									LocalObjectReference: v1.LocalObjectReference{
 										Name: "rules-configmap-one",
 									},
+									Optional: ptr.To(true),
 								},
 							},
 						},
 						{
 							Name: "thanos-ruler-foo-data",
 							VolumeSource: v1.VolumeSource{
-								EmptyDir: &v1.EmptyDirVolumeSource{
-									Medium: "",
-								},
+								EmptyDir: &v1.EmptyDirVolumeSource{},
 							},
 						},
 						{
 							Name: "additional-volume",
 							VolumeSource: v1.VolumeSource{
-								EmptyDir: &v1.EmptyDirVolumeSource{
-									Medium: "",
-								},
+								EmptyDir: &v1.EmptyDirVolumeSource{},
 							},
 						},
 					},
@@ -305,11 +305,8 @@ func TestTracing(t *testing.T) {
 	{
 		const expectedArg = "--tracing.config-file=" + fullPath
 		var containsArg bool
-		for _, arg := range sset.Spec.Template.Spec.Containers[0].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
+		if slices.Contains(sset.Spec.Template.Spec.Containers[0].Args, expectedArg) {
+			containsArg = true
 		}
 		require.True(t, containsArg)
 	}
@@ -400,11 +397,8 @@ func TestObjectStorage(t *testing.T) {
 	{
 		const expectedArg = "--objstore.config-file=" + fullPath
 		var containsArg bool
-		for _, arg := range sset.Spec.Template.Spec.Containers[0].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
+		if slices.Contains(sset.Spec.Template.Spec.Containers[0].Args, expectedArg) {
+			containsArg = true
 		}
 		require.True(t, containsArg)
 	}
@@ -495,11 +489,8 @@ func TestAlertRelabel(t *testing.T) {
 	{
 		const expectedArg = "--alert.relabel-config-file=" + fullPath
 		var containsArg bool
-		for _, arg := range sset.Spec.Template.Spec.Containers[0].Args {
-			if arg == expectedArg {
-				containsArg = true
-				break
-			}
+		if slices.Contains(sset.Spec.Template.Spec.Containers[0].Args, expectedArg) {
+			containsArg = true
 		}
 		require.True(t, containsArg)
 	}
@@ -620,10 +611,10 @@ func TestLabelsAndAlertDropLabels(t *testing.T) {
 			require.Equal(t, "thanos-ruler", ruler.Name)
 
 			for _, arg := range ruler.Args {
-				if strings.HasPrefix(arg, labelPrefix) {
-					actualLabels = append(actualLabels, strings.TrimPrefix(arg, labelPrefix))
-				} else if strings.HasPrefix(arg, alertDropLabelPrefix) {
-					actualDropLabels = append(actualDropLabels, strings.TrimPrefix(arg, alertDropLabelPrefix))
+				if after, ok := strings.CutPrefix(arg, labelPrefix); ok {
+					actualLabels = append(actualLabels, after)
+				} else if after, ok := strings.CutPrefix(arg, alertDropLabelPrefix); ok {
+					actualDropLabels = append(actualDropLabels, after)
 				}
 			}
 			require.Equal(t, tc.ExpectedLabels, actualLabels)
@@ -696,16 +687,7 @@ func TestRetention(t *testing.T) {
 			require.NoError(t, err)
 
 			trArgs := sset.Spec.Template.Spec.Containers[0].Args
-			expectedRetentionArg := fmt.Sprintf("--tsdb.retention=%s", tc.expectedRetention)
-			found := false
-			for _, flag := range trArgs {
-				if flag == expectedRetentionArg {
-					found = true
-					break
-				}
-			}
-
-			require.True(t, found)
+			require.True(t, slices.Contains(trArgs, fmt.Sprintf("--tsdb.retention=%s", tc.expectedRetention)))
 		})
 	}
 }
@@ -808,10 +790,8 @@ func TestExternalQueryURL(t *testing.T) {
 	require.Equal(t, containerName, sset.Spec.Template.Spec.Containers[0].Name)
 
 	const expectedArg = "--alert.query-url=https://example.com/"
-	for _, arg := range sset.Spec.Template.Spec.Containers[0].Args {
-		if arg == expectedArg {
-			return
-		}
+	if slices.Contains(sset.Spec.Template.Spec.Containers[0].Args, expectedArg) {
+		return
 	}
 	require.FailNow(t, "Thanos ruler is missing expected argument: %s", expectedArg)
 }
@@ -1391,6 +1371,94 @@ func TestEnableFeatures(t *testing.T) {
 			if ts.shouldHaveArg {
 				require.Equal(t, ts.expectedValue, actualValue)
 			}
+		})
+	}
+}
+
+func TestStatefulSetPodManagementPolicy(t *testing.T) {
+	for _, tc := range []struct {
+		podManagementPolicy *monitoringv1.PodManagementPolicyType
+		exp                 appsv1.PodManagementPolicyType
+	}{
+		{
+			podManagementPolicy: nil,
+			exp:                 appsv1.ParallelPodManagement,
+		},
+		{
+			podManagementPolicy: ptr.To(monitoringv1.ParallelPodManagement),
+			exp:                 appsv1.ParallelPodManagement,
+		},
+		{
+			podManagementPolicy: ptr.To(monitoringv1.OrderedReadyPodManagement),
+			exp:                 appsv1.OrderedReadyPodManagement,
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
+				Spec: monitoringv1.ThanosRulerSpec{
+					PodManagementPolicy: tc.podManagementPolicy,
+					QueryEndpoints:      emptyQueryEndpoints,
+				},
+			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.exp, sset.Spec.PodManagementPolicy)
+		})
+	}
+}
+
+func TestStatefulSetUpdateStrategy(t *testing.T) {
+	for _, tc := range []struct {
+		updateStrategy *monitoringv1.StatefulSetUpdateStrategy
+		exp            appsv1.StatefulSetUpdateStrategy
+	}{
+		{
+			updateStrategy: nil,
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.RollingUpdateStatefulSetStrategyType,
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &monitoringv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
+				},
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.RollingUpdateStatefulSetStrategyType,
+				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
+				},
+			},
+		},
+		{
+			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
+				Type: monitoringv1.OnDeleteStatefulSetStrategyType,
+			},
+			exp: appsv1.StatefulSetUpdateStrategy{
+				Type: appsv1.OnDeleteStatefulSetStrategyType,
+			},
+		},
+	} {
+		t.Run("", func(t *testing.T) {
+			sset, err := makeStatefulSet(&monitoringv1.ThanosRuler{
+				Spec: monitoringv1.ThanosRulerSpec{
+					UpdateStrategy: tc.updateStrategy,
+					QueryEndpoints: emptyQueryEndpoints,
+				},
+			}, defaultTestConfig, nil, "", &operator.ShardedSecret{})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.exp, sset.Spec.UpdateStrategy)
 		})
 	}
 }

@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"reflect"
 	"strings"
 	"testing"
@@ -229,7 +230,7 @@ func TestPropagateKubectlTemplateAnnotations(t *testing.T) {
 			modifiedSset := sset.DeepCopy()
 			modifiedSset.Spec.Template.Annotations = tc.new
 
-			err := UpdateStatefulSet(ctx, ssetClient, modifiedSset)
+			err := updateStatefulSet(ctx, ssetClient, modifiedSset)
 			require.NoError(t, err)
 
 			updatedSset, err := ssetClient.Get(ctx, "prometheus", metav1.GetOptions{})
@@ -312,12 +313,8 @@ func TestMergeMetadata(t *testing.T) {
 				svcClient := fake.NewSimpleClientset(service).CoreV1().Services(namespace)
 
 				modifiedSvc := service.DeepCopy()
-				for l, v := range tc.modifiedLabels {
-					modifiedSvc.Labels[l] = v
-				}
-				for a, v := range tc.modifiedAnnotations {
-					modifiedSvc.Annotations[a] = v
-				}
+				maps.Copy(modifiedSvc.Labels, tc.modifiedLabels)
+				maps.Copy(modifiedSvc.Annotations, tc.modifiedAnnotations)
 				_, err := svcClient.Update(context.Background(), modifiedSvc, metav1.UpdateOptions{})
 				require.NoError(t, err)
 
@@ -352,12 +349,8 @@ func TestMergeMetadata(t *testing.T) {
 				endpointsClient := fake.NewSimpleClientset(endpoints).CoreV1().Endpoints(namespace)
 
 				modifiedEndpoints := endpoints.DeepCopy()
-				for l, v := range tc.modifiedLabels {
-					modifiedEndpoints.Labels[l] = v
-				}
-				for a, v := range tc.modifiedAnnotations {
-					modifiedEndpoints.Annotations[a] = v
-				}
+				maps.Copy(modifiedEndpoints.Labels, tc.modifiedLabels)
+				maps.Copy(modifiedEndpoints.Annotations, tc.modifiedAnnotations)
 				_, err := endpointsClient.Update(context.Background(), modifiedEndpoints, metav1.UpdateOptions{})
 				require.NoError(t, err)
 
@@ -392,16 +385,12 @@ func TestMergeMetadata(t *testing.T) {
 				ssetClient := fake.NewSimpleClientset(sset).AppsV1().StatefulSets(namespace)
 
 				modifiedSset := sset.DeepCopy()
-				for l, v := range tc.modifiedLabels {
-					modifiedSset.Labels[l] = v
-				}
-				for a, v := range tc.modifiedAnnotations {
-					modifiedSset.Annotations[a] = v
-				}
+				maps.Copy(modifiedSset.Labels, tc.modifiedLabels)
+				maps.Copy(modifiedSset.Annotations, tc.modifiedAnnotations)
 				_, err := ssetClient.Update(context.Background(), modifiedSset, metav1.UpdateOptions{})
 				require.NoError(t, err)
 
-				err = UpdateStatefulSet(context.Background(), ssetClient, sset)
+				err = updateStatefulSet(context.Background(), ssetClient, sset)
 				require.NoError(t, err)
 
 				updatedSset, err := ssetClient.Get(context.Background(), "prometheus", metav1.GetOptions{})
@@ -432,12 +421,8 @@ func TestMergeMetadata(t *testing.T) {
 				sClient := fake.NewSimpleClientset(secret).CoreV1().Secrets(namespace)
 
 				modifiedSecret := secret.DeepCopy()
-				for l, v := range tc.modifiedLabels {
-					modifiedSecret.Labels[l] = v
-				}
-				for a, v := range tc.modifiedAnnotations {
-					modifiedSecret.Annotations[a] = v
-				}
+				maps.Copy(modifiedSecret.Labels, tc.modifiedLabels)
+				maps.Copy(modifiedSecret.Annotations, tc.modifiedAnnotations)
 				_, err := sClient.Update(context.Background(), modifiedSecret, metav1.UpdateOptions{})
 				require.NoError(t, err)
 
@@ -564,14 +549,14 @@ func TestFinalizerAddPatch(t *testing.T) {
 		name          string
 		finalizers    []string
 		finalizerName string
-		expectedPatch []map[string]interface{}
+		expectedPatch []map[string]any
 		expectEmpty   bool
 	}{
 		{
 			name:          "empty finalizers",
 			finalizers:    []string{},
 			finalizerName: finalizerName,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "add", "path": "/metadata/finalizers", "value": []string{finalizerName}},
 			},
 		},
@@ -579,7 +564,7 @@ func TestFinalizerAddPatch(t *testing.T) {
 			name:          "finalizer not present",
 			finalizers:    []string{"a", "b"},
 			finalizerName: finalizerName,
-			expectedPatch: []map[string]interface{}{
+			expectedPatch: []map[string]any{
 				{"op": "add", "path": "/metadata/finalizers/-", "value": finalizerName},
 			},
 		},
@@ -643,7 +628,11 @@ func TestFinalizerDeletePatch(t *testing.T) {
 			require.NoError(t, err)
 
 			if tt.expectPatch {
-				expected := []map[string]interface{}{
+				// The patch should include a "test" operation before "remove" to ensure
+				// the finalizer at the index matches the expected value, preventing
+				// race conditions from removing the wrong finalizer.
+				expected := []map[string]any{
+					{"op": "test", "path": fmt.Sprintf("/metadata/finalizers/%d", tt.expectedIndex), "value": tt.finalizerName},
 					{"op": "remove", "path": fmt.Sprintf("/metadata/finalizers/%d", tt.expectedIndex)},
 				}
 				expectedBytes, err := json.Marshal(expected)
@@ -763,6 +752,85 @@ func TestEnsureCustomGoverningService(t *testing.T) {
 			} else {
 				require.NoError(t, err)
 			}
+		})
+	}
+}
+
+func TestCreateStatefulSetOrPatchLabels(t *testing.T) {
+	testCases := []struct {
+		name                string
+		existingStatefulSet *appsv1.StatefulSet
+		newStatefulSet      *appsv1.StatefulSet
+		expectedLabels      map[string]string
+	}{
+		{
+			name: "create new statefulset successfully",
+			newStatefulSet: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prometheus",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "prometheus",
+						"env": "prod",
+					},
+				},
+			},
+			expectedLabels: map[string]string{
+				"app": "prometheus",
+				"env": "prod",
+			},
+		},
+		{
+			name: "statefulset already exists - patch labels",
+			existingStatefulSet: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prometheus",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app": "prometheus",
+						"env": "dev",
+					},
+				},
+			},
+			newStatefulSet: &appsv1.StatefulSet{
+				ObjectMeta: metav1.ObjectMeta{
+					Name:      "prometheus",
+					Namespace: "default",
+					Labels: map[string]string{
+						"app":     "prometheus",
+						"env":     "prod",
+						"version": "v2.0",
+					},
+				},
+			},
+			expectedLabels: map[string]string{
+				"app":     "prometheus",
+				"env":     "prod",
+				"version": "v2.0",
+			},
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx := context.Background()
+
+			var clientSet *fake.Clientset
+			if tc.existingStatefulSet != nil {
+				clientSet = fake.NewClientset(tc.existingStatefulSet)
+			} else {
+				clientSet = fake.NewClientset()
+			}
+
+			ssetClient := clientSet.AppsV1().StatefulSets(tc.newStatefulSet.Namespace)
+
+			_, err := CreateStatefulSetOrPatchLabels(ctx, ssetClient, tc.newStatefulSet)
+			require.NoError(t, err)
+
+			// Verify the statefulset in the cluster has the expected labels
+			result, err := ssetClient.Get(ctx, tc.newStatefulSet.Name, metav1.GetOptions{})
+			require.NoError(t, err)
+			require.Equal(t, tc.expectedLabels, result.Labels)
 		})
 	}
 }

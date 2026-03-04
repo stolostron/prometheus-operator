@@ -25,13 +25,10 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"golang.org/x/sync/errgroup"
 	appsv1 "k8s.io/api/apps/v1"
-	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/api/meta"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/labels"
 	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/types"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/client-go/tools/cache"
 	"k8s.io/client-go/util/workqueue"
@@ -136,17 +133,23 @@ func newWorkQueueMetricsProvider(reg prometheus.Registerer) *workQueueMetricsPro
 		),
 		latency: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "prometheus_operator_workqueue_latency_seconds",
-				Help:    "Histogram of latency for the queue",
-				Buckets: []float64{.1, .5, 1, 5, 10},
+				Name:                            "prometheus_operator_workqueue_latency_seconds",
+				Help:                            "Histogram of latency for the queue",
+				Buckets:                         []float64{.1, .5, 1, 5, 10},
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"name"},
 		),
 		workDuration: prometheus.NewHistogramVec(
 			prometheus.HistogramOpts{
-				Name:    "prometheus_operator_workqueue_work_duration_seconds",
-				Help:    "Histogram of work duration for the queue",
-				Buckets: []float64{.1, .5, 1, 5, 10},
+				Name:                            "prometheus_operator_workqueue_work_duration_seconds",
+				Help:                            "Histogram of work duration for the queue",
+				Buckets:                         []float64{.1, .5, 1, 5, 10},
+				NativeHistogramBucketFactor:     1.1,
+				NativeHistogramMaxBucketNumber:  100,
+				NativeHistogramMinResetDuration: 1 * time.Hour,
 			},
 			[]string{"name"},
 		),
@@ -235,9 +238,12 @@ func NewResourceReconciler(
 	})
 
 	reconcileDuration := prometheus.NewHistogram(prometheus.HistogramOpts{
-		Name:    "prometheus_operator_reconcile_duration_seconds",
-		Help:    "Histogram of reconcile operations",
-		Buckets: []float64{.1, .5, 1, 5, 10},
+		Name:                            "prometheus_operator_reconcile_duration_seconds",
+		Help:                            "Histogram of reconcile operations",
+		Buckets:                         []float64{.1, .5, 1, 5, 10},
+		NativeHistogramBucketFactor:     1.1,
+		NativeHistogramMaxBucketNumber:  100,
+		NativeHistogramMinResetDuration: 1 * time.Hour,
 	})
 
 	statusTotal := prometheus.NewCounter(prometheus.CounterOpts{
@@ -297,7 +303,7 @@ func NewResourceReconciler(
 func (rr *ResourceReconciler) DeletionInProgress(o metav1.Object) bool {
 	if o.GetDeletionTimestamp() != nil {
 		rr.logger.Debug("object deletion in progress",
-			"object", fmt.Sprintf("%s/%s", o.GetNamespace(), o.GetName()),
+			"object", KeyForObject(o),
 		)
 		return true
 	}
@@ -310,7 +316,7 @@ func (rr *ResourceReconciler) hasObjectChanged(old, cur metav1.Object) bool {
 		rr.logger.Debug("different resource versions",
 			"current", cur.GetResourceVersion(),
 			"old", old.GetResourceVersion(),
-			"object", fmt.Sprintf("%s/%s", cur.GetNamespace(), cur.GetName()),
+			"object", KeyForObject(cur),
 		)
 		return true
 	}
@@ -327,7 +333,7 @@ func (rr *ResourceReconciler) hasStateChanged(old, cur metav1.Object) bool {
 		rr.logger.Debug("different generations",
 			"current", cur.GetGeneration(),
 			"old", old.GetGeneration(),
-			"object", fmt.Sprintf("%s/%s", cur.GetNamespace(), cur.GetName()),
+			"object", KeyForObject(cur),
 		)
 		return true
 	}
@@ -336,7 +342,7 @@ func (rr *ResourceReconciler) hasStateChanged(old, cur metav1.Object) bool {
 		rr.logger.Debug("different labels",
 			"current", fmt.Sprintf("%v", cur.GetLabels()),
 			"old", fmt.Sprintf("%v", old.GetLabels()),
-			"object", fmt.Sprintf("%s/%s", cur.GetNamespace(), cur.GetName()),
+			"object", KeyForObject(cur),
 		)
 		return true
 
@@ -345,7 +351,7 @@ func (rr *ResourceReconciler) hasStateChanged(old, cur metav1.Object) bool {
 		rr.logger.Debug("different annotations",
 			"current", fmt.Sprintf("%v", cur.GetAnnotations()),
 			"old", fmt.Sprintf("%v", old.GetAnnotations()),
-			"object", fmt.Sprintf("%s/%s", cur.GetNamespace(), cur.GetName()),
+			"object", KeyForObject(cur),
 		)
 		return true
 	}
@@ -355,7 +361,7 @@ func (rr *ResourceReconciler) hasStateChanged(old, cur metav1.Object) bool {
 
 // objectKey returns the `namespace/name` key of a Kubernetes object, typically
 // retrieved from a controller's cache.
-func (rr *ResourceReconciler) objectKey(obj interface{}) (string, bool) {
+func (rr *ResourceReconciler) objectKey(obj any) (string, bool) {
 	k, err := cache.DeletionHandlingMetaNamespaceKeyFunc(obj)
 	if err != nil {
 		rr.logger.Error("creating key failed", "err", err)
@@ -375,7 +381,7 @@ func (rr *ResourceReconciler) resolve(obj metav1.Object) metav1.Object {
 			continue
 		}
 
-		owner, err := rr.getter.Get(types.NamespacedName{Namespace: obj.GetNamespace(), Name: or.Name}.String())
+		owner, err := rr.getter.Get(KeyForObject(&metav1.ObjectMeta{Name: or.Name, Namespace: obj.GetNamespace()}))
 		if err != nil {
 			if !apierrors.IsNotFound(err) {
 				rr.logger.Error("failed to resolve controller owner", "err", err, "namespace", obj.GetNamespace(), "name", obj.GetName(), "kind", rr.resourceKind)
@@ -398,7 +404,7 @@ func (rr *ResourceReconciler) resolve(obj metav1.Object) metav1.Object {
 }
 
 // OnAdd implements the cache.ResourceEventHandler interface.
-func (rr *ResourceReconciler) OnAdd(obj interface{}, _ bool) {
+func (rr *ResourceReconciler) OnAdd(obj any, _ bool) {
 
 	switch v := obj.(type) {
 	case *appsv1.DaemonSet:
@@ -430,7 +436,7 @@ func (rr *ResourceReconciler) OnAdd(obj interface{}, _ bool) {
 }
 
 // OnUpdate implements the cache.ResourceEventHandler interface.
-func (rr *ResourceReconciler) OnUpdate(old, cur interface{}) {
+func (rr *ResourceReconciler) OnUpdate(old, cur any) {
 	switch v := cur.(type) {
 	case *appsv1.DaemonSet:
 		rr.onDaemonSetUpdate(old.(*appsv1.DaemonSet), v)
@@ -448,11 +454,13 @@ func (rr *ResourceReconciler) OnUpdate(old, cur interface{}) {
 	mOld, err := meta.Accessor(old)
 	if err != nil {
 		rr.logger.Error("failed to get old object meta", "err", err, "key", key)
+		return
 	}
 
 	mCur, err := meta.Accessor(cur)
 	if err != nil {
 		rr.logger.Error("failed to get current object meta", "err", err, "key", key)
+		return
 	}
 
 	if !rr.isManagedByController(mCur) {
@@ -474,7 +482,7 @@ func (rr *ResourceReconciler) OnUpdate(old, cur interface{}) {
 }
 
 // OnDelete implements the cache.ResourceEventHandler interface.
-func (rr *ResourceReconciler) OnDelete(obj interface{}) {
+func (rr *ResourceReconciler) OnDelete(obj any) {
 	switch v := obj.(type) {
 	case *appsv1.DaemonSet:
 		rr.onDaemonSetDelete(v)
@@ -615,7 +623,7 @@ func (rr *ResourceReconciler) EnqueueForReconciliation(obj metav1.Object) {
 		return
 	}
 
-	rr.reconcileQ.Add(obj.GetNamespace() + "/" + obj.GetName())
+	rr.reconcileQ.Add(KeyForObject(obj))
 }
 
 // EnqueueForStatus asks for updating the status of the object.
@@ -624,7 +632,7 @@ func (rr *ResourceReconciler) EnqueueForStatus(obj metav1.Object) {
 		return
 	}
 
-	rr.statusQ.Add(obj.GetNamespace() + "/" + obj.GetName())
+	rr.statusQ.Add(KeyForObject(obj))
 }
 
 // Run the goroutines responsible for processing the reconciliation and status
@@ -705,19 +713,6 @@ func (rr *ResourceReconciler) processNextStatusItem(ctx context.Context) bool {
 	return true
 }
 
-// ListMatchingNamespaces lists all the namespaces that match the provided
-// selector.
-func ListMatchingNamespaces(selector labels.Selector, nsInf cache.SharedIndexInformer) ([]string, error) {
-	var ns []string
-	err := cache.ListAll(nsInf.GetStore(), selector, func(obj interface{}) {
-		ns = append(ns, obj.(*v1.Namespace).Name)
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list namespaces: %w", err)
-	}
-	return ns, nil
-}
-
 // isManagedByController returns true if the controller is the "owner" of the object.
 // Whether it's owner is determined by the value of 'controllerID'
 // annotation. If the value matches the controllerID then it owns it.
@@ -729,9 +724,20 @@ func (rr *ResourceReconciler) isManagedByController(obj metav1.Object) bool {
 	}
 
 	if controllerID != rr.controllerID {
-		rr.logger.Debug("skipping object not managed by the controller", "object", fmt.Sprintf("%s/%s", obj.GetNamespace(), obj.GetName()), "object_id", controllerID, "controller_id", rr.controllerID)
+		rr.logger.Debug("skipping object not managed by the controller", "object", KeyForObject(obj), "object_id", controllerID, "controller_id", rr.controllerID)
 		return false
 	}
 
 	return true
+}
+
+// KeyForObject returns a string key identifying the given object.
+// For cluster-scoped resources, the key is `<name>`.
+// For namespace-scoped resources, the key is `<namespace>/<name>`.
+func KeyForObject(o metav1.Object) string {
+	if o.GetNamespace() == "" {
+		return o.GetName()
+	}
+
+	return o.GetNamespace() + "/" + o.GetName()
 }

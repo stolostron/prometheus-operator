@@ -16,6 +16,7 @@ package prometheusagent
 
 import (
 	"fmt"
+	"maps"
 
 	appsv1 "k8s.io/api/apps/v1"
 	v1 "k8s.io/api/core/v1"
@@ -196,9 +197,7 @@ func makeStatefulSetSpec(
 	podSelectorLabels := makeSelectorLabels(p.GetObjectMeta().GetName())
 	podSelectorLabels[prompkg.ShardLabelName] = fmt.Sprintf("%d", shard)
 
-	for k, v := range podSelectorLabels {
-		podLabels[k] = v
-	}
+	maps.Copy(podLabels, podSelectorLabels)
 
 	finalSelectorLabels := c.Labels.Merge(podSelectorLabels)
 	finalLabels := c.Labels.Merge(podLabels)
@@ -291,16 +290,18 @@ func makeStatefulSetSpec(
 	k8sutil.UpdateDNSPolicy(&spec, cpf.DNSPolicy)
 	k8sutil.UpdateDNSConfig(&spec, cpf.DNSConfig)
 
-	// PodManagementPolicy is set to Parallel to mitigate issues in kubernetes: https://github.com/kubernetes/kubernetes/issues/60164
-	// This is also mentioned as one of limitations of StatefulSets: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
+	// By default, podManagementPolicy is set to Parallel to mitigate rollout
+	// issues in Kubernetes (see https://github.com/kubernetes/kubernetes/issues/60164).
+	// This is also mentioned as one of limitations of StatefulSets:
+	// https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
+	podManagementPolicy := ptr.Deref(cpf.PodManagementPolicy, monitoringv1.ParallelPodManagement)
+
 	return &appsv1.StatefulSetSpec{
 		ServiceName:         ptr.Deref(cpf.ServiceName, governingServiceName),
 		Replicas:            cpf.Replicas,
-		PodManagementPolicy: appsv1.ParallelPodManagement,
-		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-			Type: appsv1.RollingUpdateStatefulSetStrategyType,
-		},
-		MinReadySeconds: ptr.Deref(p.Spec.MinReadySeconds, 0),
+		PodManagementPolicy: appsv1.PodManagementPolicyType(podManagementPolicy),
+		UpdateStrategy:      operator.UpdateStrategyForStatefulSet(cpf.UpdateStrategy),
+		MinReadySeconds:     ptr.Deref(p.Spec.MinReadySeconds, 0),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: finalSelectorLabels,
 		},

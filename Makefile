@@ -36,7 +36,8 @@ TYPES_V1ALPHA1_TARGET += pkg/apis/monitoring/v1alpha1/prometheusagent_types.go
 TYPES_V1ALPHA1_TARGET += pkg/apis/monitoring/v1alpha1/scrapeconfig_types.go
 TYPES_V1BETA1_TARGET := pkg/apis/monitoring/v1beta1/alertmanager_config_types.go
 
-TOOLS_BIN_DIR ?= $(shell pwd)/tmp/bin
+ROOT_DIR=$(shell pwd)
+TOOLS_BIN_DIR ?= $(ROOT_DIR)/tmp/bin
 export PATH := $(TOOLS_BIN_DIR):$(PATH)
 
 CONTROLLER_GEN_BINARY := $(TOOLS_BIN_DIR)/controller-gen
@@ -46,10 +47,12 @@ JSONNET_BINARY=$(TOOLS_BIN_DIR)/jsonnet
 JSONNETFMT_BINARY=$(TOOLS_BIN_DIR)/jsonnetfmt
 SHELLCHECK_BINARY=$(TOOLS_BIN_DIR)/shellcheck
 PROMLINTER_BINARY=$(TOOLS_BIN_DIR)/promlinter
+PROMTOOL_BINARY=$(TOOLS_BIN_DIR)/promtool
 GOLANGCILINTER_BINARY=$(TOOLS_BIN_DIR)/golangci-lint
 MDOX_BINARY=$(TOOLS_BIN_DIR)/mdox
 API_DOC_GEN_BINARY=$(TOOLS_BIN_DIR)/gen-crd-api-reference-docs
-TOOLING=$(CONTROLLER_GEN_BINARY) $(GOBINDATA_BINARY) $(JB_BINARY) $(GOJSONTOYAML_BINARY) $(JSONNET_BINARY) $(JSONNETFMT_BINARY) $(SHELLCHECK_BINARY) $(PROMLINTER_BINARY) $(GOLANGCILINTER_BINARY) $(MDOX_BINARY) $(API_DOC_GEN_BINARY)
+GOLANGCIKUBEAPILINTER_BINARY=$(TOOLS_BIN_DIR)/golangci-kube-api-linter
+TOOLING=$(CONTROLLER_GEN_BINARY) $(GOBINDATA_BINARY) $(JB_BINARY) $(GOJSONTOYAML_BINARY) $(JSONNET_BINARY) $(JSONNETFMT_BINARY) $(SHELLCHECK_BINARY) $(PROMLINTER_BINARY) $(PROMTOOL_BINARY) $(GOLANGCILINTER_BINARY) $(MDOX_BINARY) $(API_DOC_GEN_BINARY) $(GOLANGCIKUBEAPILINTER_BINARY)
 
 K8S_GEN_BINARIES:=informer-gen lister-gen client-gen applyconfiguration-gen
 K8S_GEN_ARGS:=--go-header-file $(shell pwd)/.header --v=1 --logtostderr
@@ -232,9 +235,9 @@ generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/th
 .PHONY: generate-crds
 generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET)
 	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) $(CRD_OPTIONS) paths=./v1/. paths=./v1alpha1/. output:crd:dir=$(PWD)/example/prometheus-operator-crd/
+	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) $(CRD_OPTIONS) paths=./... output:crd:dir=$(PWD)/example/prometheus-operator-crd-full
 	VERSION=$(VERSION) ./scripts/generate/append-operator-version.sh
 	find example/prometheus-operator-crd/ -name '*.yaml' -print0 | xargs -0 -I{} sh -c '$(GOJSONTOYAML_BINARY) -yamltojson < "$$1" | jq > "$(PWD)/jsonnet/prometheus-operator/$$(basename $$1 | cut -d'_' -f2 | cut -d. -f1)-crd.json"' -- {}
-	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) $(CRD_OPTIONS) paths=./... output:crd:dir=$(PWD)/example/prometheus-operator-crd-full
 	echo "// Code generated using 'make generate-crds'. DO NOT EDIT." > $(PWD)/jsonnet/prometheus-operator/alertmanagerconfigs-v1beta1-crd.libsonnet
 	echo "{spec+: {versions+: $$($(GOJSONTOYAML_BINARY) -yamltojson < example/prometheus-operator-crd-full/monitoring.coreos.com_alertmanagerconfigs.yaml | jq '.spec.versions | map(select(.name == "v1beta1"))')}}" | $(JSONNETFMT_BINARY) - >> $(PWD)/jsonnet/prometheus-operator/alertmanagerconfigs-v1beta1-crd.libsonnet
 
@@ -278,8 +281,8 @@ example/thanos/thanos.yaml: scripts/generate/vendor scripts/generate/thanos.json
 example/admission-webhook: scripts/generate/vendor scripts/generate/admission-webhook.jsonnet $(shell find jsonnet -type f)
 	scripts/generate/build-admission-webhook-example.sh
 
-example/alertmanager-crd-conversion: scripts/generate/vendor scripts/generate/conversion-webhook-patch-for-alermanagerconfig-crd.jsonnet $(shell find jsonnet -type f)
-	scripts/generate/build-conversion-webhook-patch-for-alermanagerconfig-crd.sh
+example/alertmanager-crd-conversion: scripts/generate/vendor scripts/generate/conversion-webhook-patch-for-alertmanagerconfig-crd.jsonnet $(shell find jsonnet -type f)
+	scripts/generate/build-conversion-webhook-patch-for-alertmanagerconfig-crd.sh
 
 FULLY_GENERATED_DOCS = Documentation/api-reference/api.md Documentation/getting-started/compatibility.md Documentation/platform/operator.md
 
@@ -319,13 +322,27 @@ shellcheck: $(SHELLCHECK_BINARY)
 check-metrics: $(PROMLINTER_BINARY)
 	$(PROMLINTER_BINARY) lint .
 
+.PHONY: check
+check: check-golang check-api
+
 .PHONY: check-golang
 check-golang: $(GOLANGCILINTER_BINARY)
 	$(GOLANGCILINTER_BINARY) run -v
 
+.PHONY: check-api
+check-api: $(GOLANGCIKUBEAPILINTER_BINARY)
+	cd pkg/apis/monitoring && $(GOLANGCIKUBEAPILINTER_BINARY) run -v --config $(ROOT_DIR)/.golangci-kal.yml
+
+.PHONY: check
+fix: fix-golang fix-api
+
 .PHONY: fix-golang
 fix-golang: $(GOLANGCILINTER_BINARY)
 	$(GOLANGCILINTER_BINARY) run --fix
+
+.PHONY: fix-api
+fix-api: $(GOLANGCIKUBEAPILINTER_BINARY)
+	cd pkg/apis/monitoring && $(GOLANGCIKUBEAPILINTER_BINARY) run -v --config $(ROOT_DIR)/.golangci-kal.yml --fix
 
 MDOX_VALIDATE_CONFIG?=.mdox.validate.yaml
 MD_FILES_TO_FORMAT=$(filter-out $(FULLY_GENERATED_DOCS), $(shell find Documentation -name "*.md")) $(filter-out ADOPTERS.md, $(shell ls *.md))
@@ -348,16 +365,20 @@ check-docs: $(MDOX_BINARY)
 test: test-unit test-long test-e2e
 
 .PHONY: test-unit
-test-unit:
+test-unit: test-prometheus-goldenfiles
 	go test -race $(TEST_RUN_ARGS) -short $(pkgs) -count=1 -v
 
 .PHONY: test-long
-test-long:
+test-long: test-prometheus-goldenfiles
 	go test $(TEST_RUN_ARGS) $(pkgs) -count=1 -v
 
 .PHONY: test-unit-update-golden
 test-unit-update-golden:
 	./scripts/update-golden-files.sh
+
+.PHONY: test-prometheus-goldenfiles
+test-prometheus-goldenfiles: $(PROMTOOL_BINARY)
+	$(PROMTOOL_BINARY) check config --syntax-only pkg/prometheus/testdata/*.golden
 
 test/instrumented-sample-app/certs/cert.pem test/instrumented-sample-app/certs/key.pem:
 	cd test/instrumented-sample-app && make generate-certs
@@ -424,6 +445,7 @@ $(TOOLING): $(TOOLS_BIN_DIR)
 	@echo Installing tools from scripts/tools.go
 	@cat scripts/tools.go | grep _ | awk -F'"' '{print $$2}' | GOBIN=$(TOOLS_BIN_DIR) xargs -tI % go install -mod=readonly -modfile=scripts/go.mod %
 	@GOBIN=$(TOOLS_BIN_DIR) go install $(GO_PKG)/cmd/po-docgen
+	@GOBIN=$(TOOLS_BIN_DIR) $(GOLANGCILINTER_BINARY) custom
 	@echo Downloading shellcheck
 	@cd $(TOOLS_BIN_DIR) && wget -qO- "https://github.com/koalaman/shellcheck/releases/download/stable/shellcheck-stable.$(GOOS).x86_64.tar.xz" | tar -xJv --strip=1 shellcheck-stable/shellcheck
 
