@@ -292,7 +292,7 @@ func testTRMinReadySeconds(t *testing.T) {
 	require.Equal(t, int32(10), trSS.Spec.MinReadySeconds)
 }
 
-// Tests Thanos ruler -> Alertmanger path
+// Tests Thanos ruler -> Alertmanager path
 // This is done by creating a firing rule that will be picked up by
 // Thanos Ruler which will send it to Alertmanager, finally we will
 // use the Alertmanager API to validate that the alert is there.
@@ -326,19 +326,19 @@ func testTRAlertmanagerConfig(t *testing.T) {
 	_, err = framework.CreateOrUpdateServiceAndWaitUntilReady(context.Background(), ns, svc)
 	require.NoError(t, err)
 
-	// Create Secret with Alermanager config,
+	// Create Secret with Alertmanager config,
 	trAmConfigSecret := &v1.Secret{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: secretName,
 		},
 		Data: map[string][]byte{
-			configKey: []byte(fmt.Sprintf(`
+			configKey: fmt.Appendf(nil, `
 alertmanagers:
 - scheme: http
   api_version: v2
   static_configs:
     - dnssrv+_web._tcp.%s.%s.svc.cluster.local
-`, amSVC.Name, ns)),
+`, amSVC.Name, ns),
 		},
 	}
 	_, err = framework.KubeClient.CoreV1().Secrets(ns).Create(context.Background(), trAmConfigSecret, metav1.CreateOptions{})
@@ -406,11 +406,11 @@ func testTRQueryConfig(t *testing.T) {
 			Name: secretName,
 		},
 		Data: map[string][]byte{
-			configKey: []byte(fmt.Sprintf(`
+			configKey: fmt.Appendf(nil, `
 - scheme: http
   static_configs:
   - %s.%s.svc:%d
-`, querierSvc.Name, ns, querierSvc.Spec.Ports[0].Port)),
+`, querierSvc.Name, ns, querierSvc.Spec.Ports[0].Port),
 		},
 	}
 	_, err = framework.KubeClient.CoreV1().Secrets(ns).Create(context.Background(), trQueryConfSecret, metav1.CreateOptions{})
@@ -589,11 +589,11 @@ func testThanosRulerStateless(t *testing.T) {
 			Name: secretName,
 		},
 		Data: map[string][]byte{
-			configKey: []byte(fmt.Sprintf(`
+			configKey: fmt.Appendf(nil, `
 - scheme: http
   static_configs:
   - %s.%s.svc:%d
-`, promSVC.Name, ns, promSVC.Spec.Ports[0].Port)),
+`, promSVC.Name, ns, promSVC.Spec.Ports[0].Port),
 		},
 	}
 	_, err = framework.KubeClient.CoreV1().Secrets(ns).Create(ctx, trQueryConfSecret, metav1.CreateOptions{})
@@ -635,4 +635,34 @@ func testThanosRulerStateless(t *testing.T) {
 	// Check that the ALERTS metric is present in Prometheus.
 	err = framework.WaitForPrometheusFiringAlert(context.Background(), ns, promSVC.Name, testAlert)
 	require.NoError(t, err)
+}
+
+func testThanosRulerScaleUpWithoutLabels(t *testing.T) {
+	t.Parallel()
+	ctx := context.Background()
+	testCtx := framework.NewTestCtx(t)
+	defer testCtx.Cleanup(t)
+	ns := framework.CreateNamespace(ctx, t, testCtx)
+	framework.SetupPrometheusRBAC(ctx, t, testCtx, ns)
+
+	name := "test"
+
+	// Create a ThanosRuler resource with 1 replica
+	tr, err := framework.CreateThanosRulerAndWaitUntilReady(ctx, ns, framework.MakeBasicThanosRuler(name, 1, "http://test.example.com"))
+	require.NoError(t, err)
+
+	// Remove all labels on the StatefulSet using Patch
+	stsName := fmt.Sprintf("thanos-ruler-%s", name)
+	err = framework.RemoveAllLabelsFromStatefulSet(ctx, stsName, ns)
+	require.NoError(t, err)
+
+	// Scale up the ThanosRuler resource to 2 replicas
+	_, err = framework.UpdateThanosRulerReplicasAndWaitUntilReady(ctx, tr.Name, ns, 2)
+	require.NoError(t, err)
+
+	// Verify the StatefulSet now has labels again (restored by the operator)
+	stsClient := framework.KubeClient.AppsV1().StatefulSets(ns)
+	sts, err := stsClient.Get(ctx, stsName, metav1.GetOptions{})
+	require.NoError(t, err)
+	require.NotEmpty(t, sts.GetLabels(), "expected labels to be restored on the StatefulSet by the operator")
 }

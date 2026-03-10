@@ -294,13 +294,6 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		trCLIArgs = append(trCLIArgs, monitoringv1.Argument{Name: "alert.relabel-config-file", Value: fullPath})
 	}
 
-	//	trVolumes = append(trVolumes, tlsSecrets.Volume("thanos-ruler-config"))
-	//	trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
-	//		Name:      "thanos-ruler-config",
-	//		ReadOnly:  true,
-	//		MountPath: tlsAssetsDir,
-	//	})
-
 	trVolumes = append(trVolumes, tlsSecrets.Volume("tls-assets"))
 	trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
 		Name:      "tls-assets",
@@ -413,12 +406,8 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 	podAnnotations := map[string]string{}
 	podLabels := map[string]string{}
 	if tr.Spec.PodMetadata != nil {
-		for k, v := range tr.Spec.PodMetadata.Labels {
-			podLabels[k] = v
-		}
-		for k, v := range tr.Spec.PodMetadata.Annotations {
-			podAnnotations[k] = v
-		}
+		maps.Copy(podLabels, tr.Spec.PodMetadata.Labels)
+		maps.Copy(podAnnotations, tr.Spec.PodMetadata.Annotations)
 	}
 	// In cases where an existing selector label is modified, or a new one is added, new sts cannot match existing pods.
 	// We should try to avoid removing such immutable fields whenever possible since doing
@@ -450,12 +439,14 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 					LocalObjectReference: v1.LocalObjectReference{
 						Name: name,
 					},
+					Optional: ptr.To(true),
 				},
 			},
 		})
 		trVolumeMounts = append(trVolumeMounts, v1.VolumeMount{
 			Name:      name,
 			MountPath: rulesDir + "/" + name,
+			ReadOnly:  true,
 		})
 	}
 
@@ -487,16 +478,18 @@ func makeStatefulSetSpec(tr *monitoringv1.ThanosRuler, config Config, ruleConfig
 		return nil, fmt.Errorf("failed to merge containers spec: %w", err)
 	}
 
+	// By default, podManagementPolicy is set to Parallel to mitigate rollout
+	// issues in Kubernetes (see https://github.com/kubernetes/kubernetes/issues/60164).
+	// This is also mentioned as one of limitations of StatefulSets:
+	// https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
+	podManagementPolicy := ptr.Deref(tr.Spec.PodManagementPolicy, monitoringv1.ParallelPodManagement)
+
 	spec := appsv1.StatefulSetSpec{
-		ServiceName:     ptr.Deref(tr.Spec.ServiceName, governingServiceName),
-		Replicas:        tr.Spec.Replicas,
-		MinReadySeconds: ptr.Deref(tr.Spec.MinReadySeconds, 0),
-		// PodManagementPolicy is set to Parallel to mitigate issues in kubernetes: https://github.com/kubernetes/kubernetes/issues/60164
-		// This is also mentioned as one of limitations of StatefulSets: https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#limitations
-		PodManagementPolicy: appsv1.ParallelPodManagement,
-		UpdateStrategy: appsv1.StatefulSetUpdateStrategy{
-			Type: appsv1.RollingUpdateStatefulSetStrategyType,
-		},
+		ServiceName:         ptr.Deref(tr.Spec.ServiceName, governingServiceName),
+		Replicas:            tr.Spec.Replicas,
+		MinReadySeconds:     ptr.Deref(tr.Spec.MinReadySeconds, 0),
+		PodManagementPolicy: appsv1.PodManagementPolicyType(podManagementPolicy),
+		UpdateStrategy:      operator.UpdateStrategyForStatefulSet(tr.Spec.UpdateStrategy),
 		Selector: &metav1.LabelSelector{
 			MatchLabels: finalLabels,
 		},

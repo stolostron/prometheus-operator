@@ -180,8 +180,6 @@ func TestAllNS(t *testing.T) {
 			EnableAdmissionWebhook: true,
 			ClusterRoleBindings:    true,
 			EnableScrapeConfigs:    true,
-			// testPrometheusReconciliationOnSecretChanges needs this flag to be turned on.
-			AdditionalArgs: []string{"--watch-referenced-objects-in-all-namespaces=true"},
 		},
 	)
 	require.NoError(t, err)
@@ -230,6 +228,7 @@ func testAllNSAlertmanager(t *testing.T) {
 	skipAlertmanagerTests(t)
 	testFuncs := map[string]func(t *testing.T){
 		"AlertmanagerConfigMatcherStrategy":       testAlertmanagerConfigMatcherStrategy,
+		"AlertmanagerConfigCRDValidation":         testAlertmanagerConfigCRDValidation,
 		"AlertmanagerCRD":                         testAlertmanagerCRDValidation,
 		"AMCreateDeleteCluster":                   testAMCreateDeleteCluster,
 		"AMWithStatefulsetCreationFailure":        testAlertmanagerWithStatefulsetCreationFailure,
@@ -253,6 +252,7 @@ func testAllNSAlertmanager(t *testing.T) {
 		"AMTemplateReloadConfig":                  testAMTmplateReloadConfig,
 		"AMStatusScale":                           testAlertmanagerStatusScale,
 		"AMServiceName":                           testAlertManagerServiceName,
+		"AMScaleUpWithoutLabels":                  testAMScaleUpWithoutLabels,
 	}
 
 	for name, f := range testFuncs {
@@ -320,6 +320,10 @@ func testAllNSPrometheus(t *testing.T) {
 		"PrometheusServiceName":                     testPrometheusServiceName,
 		"PrometheusAgentSSetServiceName":            testPrometheusAgentSSetServiceName,
 		"PrometheusReconciliationOnSecretChanges":   testPrometheusReconciliationOnSecretChanges,
+		"PrometheusUTF8MetricsSupport":              testPrometheusUTF8MetricsSupport,
+		"PrometheusUTF8LabelSupport":                testPrometheusUTF8LabelSupport,
+		"StuckStatefulSetRollout":                   testStuckStatefulSetRollout,
+		"PromScaleUpWithoutLabels":                  testPromScaleUpWithoutLabels,
 	}
 
 	for name, f := range testFuncs {
@@ -340,6 +344,7 @@ func testAllNSThanosRuler(t *testing.T) {
 		"ThanosRulerCheckStorageClass":                  testTRCheckStorageClass,
 		"ThanosRulerServiceName":                        testThanosRulerServiceName,
 		"ThanosRulerStateless":                          testThanosRulerStateless,
+		"ThanosRulerScaleUpWithoutLabels":               testThanosRulerScaleUpWithoutLabels,
 	}
 	for name, f := range testFuncs {
 		t.Run(name, f)
@@ -426,15 +431,35 @@ const (
 func TestGatedFeatures(t *testing.T) {
 	skipFeatureGatedTests(t)
 	testFuncs := map[string]func(t *testing.T){
-		"CreatePrometheusAgentDaemonSet":               testCreatePrometheusAgentDaemonSet,
-		"PromAgentDaemonSetResourceUpdate":             testPromAgentDaemonSetResourceUpdate,
-		"PromAgentReconcileDaemonSetResourceUpdate":    testPromAgentReconcileDaemonSetResourceUpdate,
-		"PromAgentReconcileDaemonSetResourceDelete":    testPromAgentReconcileDaemonSetResourceDelete,
-		"PrometheusAgentDaemonSetSelectPodMonitor":     testPrometheusAgentDaemonSetSelectPodMonitor,
-		"PrometheusRetentionPolicies":                  testPrometheusRetentionPolicies,
-		"FinalizerWhenStatusForConfigResourcesEnabled": testFinalizerWhenStatusForConfigResourcesEnabled,
-		"PrometheusAgentDaemonSetCELValidations":       testPrometheusAgentDaemonSetCELValidations,
-		"ServiceMonitorStatusSubresource":              testServiceMonitorStatusSubresource,
+		"CreatePrometheusAgentDaemonSet":                       testCreatePrometheusAgentDaemonSet,
+		"PromAgentDaemonSetResourceUpdate":                     testPromAgentDaemonSetResourceUpdate,
+		"PromAgentReconcileDaemonSetResourceUpdate":            testPromAgentReconcileDaemonSetResourceUpdate,
+		"PromAgentReconcileDaemonSetResourceDelete":            testPromAgentReconcileDaemonSetResourceDelete,
+		"PrometheusAgentDaemonSetSelectPodMonitor":             testPrometheusAgentDaemonSetSelectPodMonitor,
+		"PrometheusRetentionPolicies":                          testPrometheusRetentionPolicies,
+		"FinalizerWhenStatusForConfigResourcesEnabled":         testFinalizerWhenStatusForConfigResourcesEnabled,
+		"PrometheusAgentDaemonSetCELValidations":               testPrometheusAgentDaemonSetCELValidations,
+		"ServiceMonitorStatusSubresource":                      testServiceMonitorStatusSubresource,
+		"ServiceMonitorStatusWithMultipleWorkloads":            testServiceMonitorStatusWithMultipleWorkloads,
+		"GarbageCollectionOfServiceMonitorBinding":             testGarbageCollectionOfServiceMonitorBinding,
+		"RmServiceMonitorBindingDuringWorkloadDelete":          testRmServiceMonitorBindingDuringWorkloadDelete,
+		"PodMonitorStatusSubresource":                          testPodMonitorStatusSubresource,
+		"GarbageCollectionOfPodMonitorBinding":                 testGarbageCollectionOfPodMonitorBinding,
+		"RmPodMonitorBindingDuringWorkloadDelete":              testRmPodMonitorBindingDuringWorkloadDelete,
+		"ProbeStatusSubresource":                               testProbeStatusSubresource,
+		"GarbageCollectionOfProbeBinding":                      testGarbageCollectionOfProbeBinding,
+		"RmProbeBindingDuringWorkloadDelete":                   testRmProbeBindingDuringWorkloadDelete,
+		"ScrapeConfigStatusSubresource":                        testScrapeConfigStatusSubresource,
+		"GarbageCollectionOfScrapeConfigBinding":               testGarbageCollectionOfScrapeConfigBinding,
+		"RmScrapeConfigBindingDuringWorkloadDelete":            testRmScrapeConfigBindingDuringWorkloadDelete,
+		"PrometheusRuleStatusSubresource":                      testPrometheusRuleStatusSubresource,
+		"FinalizerForPromAgentWhenStatusForConfigResEnabled":   testFinalizerForPromAgentWhenStatusForConfigResEnabled,
+		"GarbageCollectionOfPrometheusRuleBinding":             testGarbageCollectionOfPrometheusRuleBinding,
+		"RmPrometheusRuleBindingDuringWorkloadDelete":          testRmPrometheusRuleBindingDuringWorkloadDelete,
+		"FinalizerForThanosRulerWhenStatusForConfigResEnabled": testFinalizerForThanosRulerWhenStatusForConfigResEnabled,
+		"PrometheusRuleStatusSubresourceForThanosRuler":        testPrometheusRuleStatusSubresourceForThanosRuler,
+		"GarbageCollectionOfPromRuleBindingForThanosRuler":     testGarbageCollectionOfPromRuleBindingForThanosRuler,
+		"RmPromeRuleBindingDuringWorkloadDeleteForThanosRuler": testRmPromeRuleBindingDuringWorkloadDeleteForThanosRuler,
 	}
 
 	for name, f := range testFuncs {
