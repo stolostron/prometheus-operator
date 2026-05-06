@@ -1,0 +1,29 @@
+# Copyright Contributors to the Open Cluster Management project
+# Licensed under the Apache License 2.0
+
+FROM registry-proxy.engineering.redhat.com/rh-osbs/openshift-golang-builder:v1.25.8 AS builder
+
+WORKDIR /workspace
+COPY . .
+
+RUN go mod vendor
+RUN GOFLAGS="" CGO_ENABLED=1 GOEXPERIMENT=strictfipsruntime go build -o operator ./cmd/operator/
+
+FROM registry-proxy.engineering.redhat.com/ubi9/ubi-minimal:latest
+
+COPY --from=builder /workspace/operator /bin/operator
+
+USER 1001
+
+ENTRYPOINT ["/bin/operator"]
+
+LABEL com.redhat.component="prometheus-operator" \
+  name="rhacm2/acm-prometheus-rhel9" \
+  cpe="cpe:/a:redhat:acm:2.16::el9" \
+  summary="prometheus-operator" \
+  io.openshift.expose-services="" \
+  io.openshift.tags="data,images" \
+  io.k8s.display-name="prometheus-operator" \
+  maintainer="" \
+  description="prometheus-operator" \
+  io.k8s.description="prometheus-operator"
