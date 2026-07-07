@@ -27,6 +27,7 @@ import (
 
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/alertmanager/config"
+	amcommon "github.com/prometheus/alertmanager/config/common"
 	"github.com/prometheus/alertmanager/timeinterval"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
@@ -483,7 +484,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse slack API URL: %w", err)
 		}
-		out.SlackAPIURL = &config.URL{URL: u}
+		out.SlackAPIURL = &amcommon.URL{URL: u}
 	}
 
 	if in.OpsGenieAPIURL != nil {
@@ -495,7 +496,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse OpsGenie API URL: %w", err)
 		}
-		out.OpsGenieAPIURL = &config.URL{URL: u}
+		out.OpsGenieAPIURL = &amcommon.URL{URL: u}
 	}
 
 	if in.OpsGenieAPIKey != nil {
@@ -511,7 +512,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse Pagerduty URL: %w", err)
 		}
-		out.PagerdutyURL = &config.URL{URL: u}
+		out.PagerdutyURL = &amcommon.URL{URL: u}
 	}
 
 	if err := cb.convertGlobalTelegramConfig(out, in.TelegramConfig); err != nil {
@@ -1962,7 +1963,7 @@ func (cb *ConfigBuilder) convertGlobalTelegramConfig(out *globalConfig, in *moni
 		if err != nil {
 			return fmt.Errorf("failed to parse Telegram API URL: %w", err)
 		}
-		out.TelegramAPIURL = &config.URL{URL: u}
+		out.TelegramAPIURL = &amcommon.URL{URL: u}
 	}
 
 	return nil
@@ -1978,7 +1979,7 @@ func (cb *ConfigBuilder) convertGlobalJiraConfig(out *globalConfig, in *monitori
 		if err != nil {
 			return fmt.Errorf("failed to parse Jira API URL: %w", err)
 		}
-		out.JiraAPIURL = &config.URL{URL: u}
+		out.JiraAPIURL = &amcommon.URL{URL: u}
 	}
 
 	return nil
@@ -1994,7 +1995,7 @@ func (cb *ConfigBuilder) convertGlobalRocketChatConfig(ctx context.Context, out 
 		if err != nil {
 			return fmt.Errorf("failed to parse Rocket Chat API URL: %w", err)
 		}
-		out.RocketChatAPIURL = &config.URL{URL: u}
+		out.RocketChatAPIURL = &amcommon.URL{URL: u}
 	}
 
 	if in.Token != nil {
@@ -2026,7 +2027,7 @@ func (cb *ConfigBuilder) convertGlobalWebexConfig(out *globalConfig, in *monitor
 		if err != nil {
 			return fmt.Errorf("parse Webex API URL: %w", err)
 		}
-		out.WebexAPIURL = &config.URL{URL: u}
+		out.WebexAPIURL = &amcommon.URL{URL: u}
 	}
 
 	return nil
@@ -2042,7 +2043,7 @@ func (cb *ConfigBuilder) convertGlobalWeChatConfig(ctx context.Context, out *glo
 		if err != nil {
 			return fmt.Errorf("wechat API URL: %w", err)
 		}
-		out.WeChatAPIURL = &config.URL{URL: u}
+		out.WeChatAPIURL = &amcommon.URL{URL: u}
 	}
 
 	if in.APISecret != nil {
@@ -2070,7 +2071,7 @@ func (cb *ConfigBuilder) convertGlobalVictorOpsConfig(ctx context.Context, out *
 		if err != nil {
 			return fmt.Errorf("failed to parse VictorOps API URL: %w", err)
 		}
-		out.VictorOpsAPIURL = &config.URL{URL: u}
+		out.VictorOpsAPIURL = &amcommon.URL{URL: u}
 	}
 
 	if in.APIKey != nil {
