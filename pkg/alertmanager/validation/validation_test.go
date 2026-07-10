@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"testing"
 
-	amcommon "github.com/prometheus/alertmanager/config/common"
+	"github.com/prometheus/alertmanager/config/common"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,7 +27,7 @@ func TestValidateUrl(t *testing.T) {
 		name         string
 		in           string
 		expectErr    bool
-		expectResult func() *amcommon.URL
+		expectResult func() *common.URL
 	}{
 		{
 			name:      "Test invalid url returns error",
@@ -42,9 +42,9 @@ func TestValidateUrl(t *testing.T) {
 		{
 			name: "Test happy path",
 			in:   "https://u:p@is.compliant.with.upstream.unmarshal",
-			expectResult: func() *amcommon.URL {
+			expectResult: func() *common.URL {
 				u, _ := url.Parse("https://u:p@is.compliant.with.upstream.unmarshal")
-				return &amcommon.URL{URL: u}
+				return &common.URL{URL: u}
 			},
 		},
 	}
@@ -68,7 +68,7 @@ func TestValidateSecretUrl(t *testing.T) {
 		name         string
 		in           string
 		expectErr    bool
-		expectResult func() *amcommon.URL
+		expectResult func() *common.URL
 	}{
 		{
 			name:      "Test invalid url returns error",
