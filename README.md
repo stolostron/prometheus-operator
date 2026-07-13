@@ -196,3 +196,5 @@ common issues and frequently asked questions (FAQ).
 ## Acknowledgements
 
 prometheus-operator organization logo was created and contributed by [Bianca Cheng Costanzo](https://github.com/bia).
+
+<!-- dummy change for CI isolation test -->
