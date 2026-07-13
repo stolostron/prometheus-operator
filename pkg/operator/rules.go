@@ -14,6 +14,8 @@
 
 package operator
 
+// dummy comment for CI isolation test - no functional change
+
 import (
 	"context"
 	"errors"
