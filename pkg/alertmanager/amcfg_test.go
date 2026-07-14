@@ -3060,7 +3060,7 @@ func TestGenerateConfig(t *testing.T) {
 			kclient: fake.NewSimpleClientset(),
 			baseConfig: alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAPIURL: &config.URL{URL: globalSlackAPIURL},
+					SlackAPIURL: &commoncfg.URL{URL: globalSlackAPIURL},
 				},
 				Route: &route{
 					Receiver: "null",
@@ -3108,7 +3108,7 @@ func TestGenerateConfig(t *testing.T) {
 			kclient: fake.NewSimpleClientset(),
 			baseConfig: alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAPIURL: &config.URL{URL: globalSlackAPIURL},
+					SlackAPIURL: &commoncfg.URL{URL: globalSlackAPIURL},
 				},
 				Route: &route{
 					Receiver: "null",
@@ -4020,7 +4020,7 @@ func TestSanitizeConfig(t *testing.T) {
 
 	versionJiraAllowed := semver.Version{Major: 0, Minor: 28}
 	versionJiraNotAllowed := semver.Version{Major: 0, Minor: 27}
-	jiraURL := config.URL{}
+	jiraURL := commoncfg.URL{}
 	jiraGlobalURL, _ := jiraURL.Parse("http://example.com")
 	jiraURL.URL = jiraGlobalURL
 
@@ -4062,7 +4062,7 @@ func TestSanitizeConfig(t *testing.T) {
 			againstVersion: versionFileURLAllowed,
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAPIURL: &config.URL{
+					SlackAPIURL: &commoncfg.URL{
 						URL: &url.URL{
 							Host: "www.test.com",
 						}},
@@ -4807,7 +4807,7 @@ func TestSanitizeConfig(t *testing.T) {
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
 					SlackAppToken: "xoxb-token",
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4823,7 +4823,7 @@ func TestSanitizeConfig(t *testing.T) {
 			againstVersion: versionSlackAppConfigNotAllowed,
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4840,7 +4840,7 @@ func TestSanitizeConfig(t *testing.T) {
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
 					SlackAppToken: "xoxb-token",
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4858,7 +4858,7 @@ func TestSanitizeConfig(t *testing.T) {
 				Global: &globalConfig{
 					SlackAppToken:     "xoxb-token",
 					SlackAppTokenFile: "/var/secrets/token",
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4874,7 +4874,7 @@ func TestSanitizeConfig(t *testing.T) {
 			againstVersion: versionSlackAppConfigAllowed,
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAPIURL: &config.URL{
+					SlackAPIURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "hooks.slack.com",
@@ -4882,7 +4882,7 @@ func TestSanitizeConfig(t *testing.T) {
 						},
 					},
 					SlackAppToken: "xoxb-token",
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4898,7 +4898,7 @@ func TestSanitizeConfig(t *testing.T) {
 			againstVersion: versionSlackAppConfigAllowed,
 			in: &alertmanagerConfig{
 				Global: &globalConfig{
-					SlackAPIURL: &config.URL{
+					SlackAPIURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
@@ -4906,7 +4906,7 @@ func TestSanitizeConfig(t *testing.T) {
 						},
 					},
 					SlackAppToken: "xoxb-token",
-					SlackAppURL: &config.URL{
+					SlackAppURL: &commoncfg.URL{
 						URL: &url.URL{
 							Scheme: "https",
 							Host:   "slack.com",
