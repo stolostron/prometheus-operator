@@ -422,6 +422,13 @@
     "selfsigned",
     "FIPS",
     "FIPSSTS",
-    "checkmark"
+    "checkmark",
+    "STARTTLS",
+    "MLKEM",
+    "slashexx",
+    "Errorf",
+    "prompkg",
+    "nutmos",
+    "nattapong"
   ]
 }
