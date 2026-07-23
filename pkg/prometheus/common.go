@@ -1,4 +1,4 @@
-// Copyright 2016 The prometheus-operator Authors
+// Copyright The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,14 +21,14 @@ import (
 	"path"
 	"path/filepath"
 
-	v1 "k8s.io/api/core/v1"
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
 	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
-	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
+	"github.com/prometheus-operator/prometheus-operator/pkg/k8s"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 	"github.com/prometheus-operator/prometheus-operator/pkg/webconfig"
 )
@@ -50,6 +50,7 @@ const (
 	DefaultPortName        = "web"
 	DefaultLogFileVolume   = "log-file"
 	DefaultLogDirectory    = "/var/log/prometheus"
+	DefaultRetention       = "24h"
 
 	// DefaultTerminationGracePeriodSeconds defines how long Kubernetes should
 	// wait before killing Prometheus on pod termination.
@@ -72,6 +73,16 @@ var (
 	ProbeTimeoutSeconds int32 = 3
 	LabelPrometheusName       = "prometheus-name"
 )
+
+// RetentionTimeOrDefault returns the configured time-based retention or the
+// default retention when neither time nor size are configured.
+func RetentionTimeOrDefault(retention monitoringv1.Duration, retentionSize monitoringv1.ByteSize) monitoringv1.Duration {
+	if retention == "" && retentionSize == "" {
+		return monitoringv1.Duration(DefaultRetention)
+	}
+
+	return retention
+}
 
 // LabelSelectorForStatefulSets returns a label selector which selects
 // statefulsets deployed with the server or agent mode.
@@ -140,13 +151,13 @@ func compress(data []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
-func MakeConfigurationSecret(p monitoringv1.PrometheusInterface, config Config, data []byte) (*v1.Secret, error) {
+func MakeConfigurationSecret(p monitoringv1.PrometheusInterface, config Config, data []byte) (*corev1.Secret, error) {
 	promConfig, err := compress(data)
 	if err != nil {
 		return nil, err
 	}
 
-	s := &v1.Secret{
+	s := &corev1.Secret{
 		Data: map[string][]byte{
 			ConfigFilename: promConfig,
 		},
@@ -217,14 +228,14 @@ func logFilePath(logFile string) string {
 }
 
 // BuildCommonVolumes returns a set of volumes to be mounted on the spec that are common between Prometheus Server and Agent.
-func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator.ShardedSecret, statefulSet bool) ([]v1.Volume, []v1.VolumeMount, error) {
+func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator.ShardedSecret, statefulSet bool) ([]corev1.Volume, []corev1.VolumeMount, error) {
 	cpf := p.GetCommonPrometheusFields()
 
-	volumes := []v1.Volume{
+	volumes := []corev1.Volume{
 		{
 			Name: "config",
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
 					SecretName: ConfigSecretName(p),
 				},
 			},
@@ -232,16 +243,16 @@ func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator
 		tlsSecrets.Volume("tls-assets"),
 		{
 			Name: "config-out",
-			VolumeSource: v1.VolumeSource{
-				EmptyDir: &v1.EmptyDirVolumeSource{
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{
 					// tmpfs is used here to avoid writing sensitive data into disk.
-					Medium: v1.StorageMediumMemory,
+					Medium: corev1.StorageMediumMemory,
 				},
 			},
 		},
 	}
 
-	promVolumeMounts := []v1.VolumeMount{
+	promVolumeMounts := []corev1.VolumeMount{
 		{
 			Name:      "config-out",
 			ReadOnly:  true,
@@ -256,7 +267,7 @@ func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator
 
 	// Only StatefulSet needs this.
 	if statefulSet {
-		promVolumeMounts = append(promVolumeMounts, v1.VolumeMount{
+		promVolumeMounts = append(promVolumeMounts, corev1.VolumeMount{
 			Name:      VolumeClaimName(p, cpf),
 			MountPath: StorageDir,
 			SubPath:   SubPathForStorage(cpf.Storage),
@@ -266,46 +277,46 @@ func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator
 	promVolumeMounts = append(promVolumeMounts, cpf.VolumeMounts...)
 
 	// Mount related secrets
-	rn := k8sutil.NewResourceNamerWithPrefix("secret")
+	rn := k8s.NewResourceNamerWithPrefix("secret")
 	for _, s := range cpf.Secrets {
 		name, err := rn.DNS1123Label(s)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		volumes = append(volumes, v1.Volume{
+		volumes = append(volumes, corev1.Volume{
 			Name: name,
-			VolumeSource: v1.VolumeSource{
-				Secret: &v1.SecretVolumeSource{
+			VolumeSource: corev1.VolumeSource{
+				Secret: &corev1.SecretVolumeSource{
 					SecretName: s,
 				},
 			},
 		})
-		promVolumeMounts = append(promVolumeMounts, v1.VolumeMount{
+		promVolumeMounts = append(promVolumeMounts, corev1.VolumeMount{
 			Name:      name,
 			ReadOnly:  true,
 			MountPath: secretsDir + s,
 		})
 	}
 
-	rn = k8sutil.NewResourceNamerWithPrefix("configmap")
+	rn = k8s.NewResourceNamerWithPrefix("configmap")
 	for _, c := range cpf.ConfigMaps {
 		name, err := rn.DNS1123Label(c)
 		if err != nil {
 			return nil, nil, err
 		}
 
-		volumes = append(volumes, v1.Volume{
+		volumes = append(volumes, corev1.Volume{
 			Name: name,
-			VolumeSource: v1.VolumeSource{
-				ConfigMap: &v1.ConfigMapVolumeSource{
-					LocalObjectReference: v1.LocalObjectReference{
+			VolumeSource: corev1.VolumeSource{
+				ConfigMap: &corev1.ConfigMapVolumeSource{
+					LocalObjectReference: corev1.LocalObjectReference{
 						Name: c,
 					},
 				},
 			},
 		})
-		promVolumeMounts = append(promVolumeMounts, v1.VolumeMount{
+		promVolumeMounts = append(promVolumeMounts, corev1.VolumeMount{
 			Name:      name,
 			ReadOnly:  true,
 			MountPath: configmapsDir + c,
@@ -314,13 +325,13 @@ func BuildCommonVolumes(p monitoringv1.PrometheusInterface, tlsSecrets *operator
 
 	// scrape failure log file
 	if cpf.ScrapeFailureLogFile != nil && UsesDefaultFileVolume(*cpf.ScrapeFailureLogFile) {
-		volumes = append(volumes, v1.Volume{
+		volumes = append(volumes, corev1.Volume{
 			Name: DefaultLogFileVolume,
-			VolumeSource: v1.VolumeSource{
-				EmptyDir: &v1.EmptyDirVolumeSource{},
+			VolumeSource: corev1.VolumeSource{
+				EmptyDir: &corev1.EmptyDirVolumeSource{},
 			},
 		})
-		promVolumeMounts = append(promVolumeMounts, v1.VolumeMount{
+		promVolumeMounts = append(promVolumeMounts, corev1.VolumeMount{
 			Name:      DefaultLogFileVolume,
 			ReadOnly:  false,
 			MountPath: DefaultLogDirectory,
@@ -344,10 +355,10 @@ func BuildConfigReloader(
 	p monitoringv1.PrometheusInterface,
 	c Config,
 	initContainer bool,
-	mounts []v1.VolumeMount,
+	mounts []corev1.VolumeMount,
 	watchedDirectories []string,
 	opts ...operator.ReloaderOption,
-) v1.Container {
+) corev1.Container {
 	cpf := p.GetCommonPrometheusFields()
 
 	reloaderOptions := []operator.ReloaderOption{
@@ -398,7 +409,7 @@ func BuildConfigReloader(
 }
 
 func ShareProcessNamespace(p monitoringv1.PrometheusInterface) *bool {
-	return ptr.To(
+	return new(
 		ptr.Deref(
 			p.GetCommonPrometheusFields().ReloadStrategy,
 			monitoringv1.HTTPReloadStrategyType,
@@ -406,13 +417,13 @@ func ShareProcessNamespace(p monitoringv1.PrometheusInterface) *bool {
 	)
 }
 
-func MakeK8sTopologySpreadConstraint(selectorLabels map[string]string, tscs []monitoringv1.TopologySpreadConstraint) []v1.TopologySpreadConstraint {
+func MakeK8sTopologySpreadConstraint(selectorLabels map[string]string, tscs []monitoringv1.TopologySpreadConstraint) []corev1.TopologySpreadConstraint {
 
-	coreTscs := make([]v1.TopologySpreadConstraint, 0, len(tscs))
+	coreTscs := make([]corev1.TopologySpreadConstraint, 0, len(tscs))
 
 	for _, tsc := range tscs {
 		if tsc.AdditionalLabelSelectors == nil {
-			coreTscs = append(coreTscs, v1.TopologySpreadConstraint(tsc.CoreV1TopologySpreadConstraint))
+			coreTscs = append(coreTscs, corev1.TopologySpreadConstraint(tsc.CoreV1TopologySpreadConstraint))
 			continue
 		}
 
@@ -429,28 +440,28 @@ func MakeK8sTopologySpreadConstraint(selectorLabels map[string]string, tscs []mo
 			tsc.LabelSelector.MatchLabels[key] = value
 		}
 
-		coreTscs = append(coreTscs, v1.TopologySpreadConstraint(tsc.CoreV1TopologySpreadConstraint))
+		coreTscs = append(coreTscs, corev1.TopologySpreadConstraint(tsc.CoreV1TopologySpreadConstraint))
 	}
 
 	return coreTscs
 }
 
-func MakeContainerPorts(cpf monitoringv1.CommonPrometheusFields) []v1.ContainerPort {
+func MakeContainerPorts(cpf monitoringv1.CommonPrometheusFields) []corev1.ContainerPort {
 	if cpf.ListenLocal {
 		return nil
 	}
 
-	return []v1.ContainerPort{
+	return []corev1.ContainerPort{
 		{
 			Name:          cpf.PortName,
 			ContainerPort: 9090,
-			Protocol:      v1.ProtocolTCP,
+			Protocol:      corev1.ProtocolTCP,
 		},
 	}
 }
 
-func CreateConfigReloaderVolumeMounts() []v1.VolumeMount {
-	return []v1.VolumeMount{
+func CreateConfigReloaderVolumeMounts() []corev1.VolumeMount {
+	return []corev1.VolumeMount{
 		{
 			Name:      "config",
 			MountPath: ConfDir,
@@ -465,7 +476,7 @@ func CreateConfigReloaderVolumeMounts() []v1.VolumeMount {
 func BuildWebconfig(
 	cpf monitoringv1.CommonPrometheusFields,
 	p monitoringv1.PrometheusInterface,
-) (monitoringv1.Argument, []v1.Volume, []v1.VolumeMount, error) {
+) (monitoringv1.Argument, []corev1.Volume, []corev1.VolumeMount, error) {
 	var fields monitoringv1.WebConfigFileFields
 	if cpf.Web != nil {
 		fields = cpf.Web.WebConfigFileFields
@@ -480,17 +491,17 @@ func BuildWebconfig(
 }
 
 // BuildStatefulSetService returns a governing service to be used for a statefulset.
-func BuildStatefulSetService(name string, selector map[string]string, p monitoringv1.PrometheusInterface, config Config) *v1.Service {
+func BuildStatefulSetService(name string, selector map[string]string, p monitoringv1.PrometheusInterface, config Config) *corev1.Service {
 	cpf := p.GetCommonPrometheusFields()
 	portName := DefaultPortName
 	if cpf.PortName != "" {
 		portName = cpf.PortName
 	}
 
-	svc := &v1.Service{
-		Spec: v1.ServiceSpec{
-			ClusterIP: v1.ClusterIPNone,
-			Ports: []v1.ServicePort{
+	svc := &corev1.Service{
+		Spec: corev1.ServiceSpec{
+			ClusterIP: corev1.ClusterIPNone,
+			Ports: []corev1.ServicePort{
 				{
 					Name:       portName,
 					Port:       9090,
