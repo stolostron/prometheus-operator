@@ -18,12 +18,8 @@ package v1
 
 // ArgumentApplyConfiguration represents a declarative configuration of the Argument type for use
 // with apply.
-//
-// Argument as part of the AdditionalArgs list.
 type ArgumentApplyConfiguration struct {
-	// name of the argument, e.g. "scrape.discovery-reload-interval".
-	Name *string `json:"name,omitempty"`
-	// value defines the argument value, e.g. 30s. Can be empty for name-only arguments (e.g. --storage.tsdb.no-lockfile)
+	Name  *string `json:"name,omitempty"`
 	Value *string `json:"value,omitempty"`
 }
 

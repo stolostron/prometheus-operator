@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2023 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,8 +18,9 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 )
 
 type fakeOwner struct {
@@ -32,13 +33,13 @@ var _ = Owner(&fakeOwner{})
 func TestUpdateObject(t *testing.T) {
 	for _, tc := range []struct {
 		opts []ObjectOption
-		o    *corev1.Secret
+		o    *v1.Secret
 
-		exp *corev1.Secret
+		exp *v1.Secret
 	}{
 		{
-			o: &corev1.Secret{},
-			exp: &corev1.Secret{
+			o: &v1.Secret{},
+			exp: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						"app.kubernetes.io/managed-by": "prometheus-operator",
@@ -66,7 +67,7 @@ func TestUpdateObject(t *testing.T) {
 					},
 				),
 			},
-			o: &corev1.Secret{
+			o: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{"annotation1": "val1", "annotation2": "val2"},
 					Labels:      map[string]string{"managed-by": "prometheus-operator2", "label2": "val2"},
@@ -80,7 +81,7 @@ func TestUpdateObject(t *testing.T) {
 					},
 				},
 			},
-			exp: &corev1.Secret{
+			exp: &v1.Secret{
 				ObjectMeta: metav1.ObjectMeta{
 					Annotations: map[string]string{
 						"annotation1": "val1",
@@ -105,8 +106,8 @@ func TestUpdateObject(t *testing.T) {
 							Kind:               "Prometheus",
 							Name:               "bar",
 							UID:                "456",
-							Controller:         new(true),
-							BlockOwnerDeletion: new(true),
+							Controller:         ptr.To(true),
+							BlockOwnerDeletion: ptr.To(true),
 						},
 					},
 				},

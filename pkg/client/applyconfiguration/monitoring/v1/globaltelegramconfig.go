@@ -22,12 +22,7 @@ import (
 
 // GlobalTelegramConfigApplyConfiguration represents a declarative configuration of the GlobalTelegramConfig type for use
 // with apply.
-//
-// GlobalTelegramConfig configures global Telegram parameters.
 type GlobalTelegramConfigApplyConfiguration struct {
-	// apiURL defines he default Telegram API URL.
-	//
-	// It requires Alertmanager >= v0.24.0.
 	APIURL *monitoringv1.URL `json:"apiURL,omitempty"`
 }
 

@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2016 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,10 +27,11 @@ func GzipConfig(w io.Writer, conf []byte) error {
 	}
 
 	buf := gzip.NewWriter(w)
+	defer buf.Close()
 	if _, err := buf.Write(conf); err != nil {
 		return err
 	}
-	return buf.Close()
+	return nil
 }
 
 func GunzipConfig(b []byte) (string, error) {
@@ -40,10 +41,8 @@ func GunzipConfig(b []byte) (string, error) {
 		return "", err
 	}
 	uncompressed := new(strings.Builder)
-	if _, err = io.Copy(uncompressed, reader); err != nil {
-		return "", err
-	}
-	if err := reader.Close(); err != nil {
+	_, err = io.Copy(uncompressed, reader)
+	if err != nil {
 		return "", err
 	}
 	return uncompressed.String(), nil

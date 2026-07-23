@@ -100,7 +100,3 @@ scrape_configs:
     action: drop
   - target_label: ns-key
     replacement: default
-storage:
-  tsdb:
-    retention:
-      time: 24h

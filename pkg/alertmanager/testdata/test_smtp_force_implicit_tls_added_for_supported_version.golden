@@ -1,3 +1,0 @@
-global:
-  smtp_force_implicit_tls: true
-templates: []

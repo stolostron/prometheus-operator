@@ -3,8 +3,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: alertmanagerconfigs.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -760,7 +760,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -1084,14 +1084,6 @@ spec:
                               This is used for SMTP AUTH when the server requires authentication.
                             minLength: 1
                             type: string
-                          forceImplicitTLS:
-                            description: |-
-                              forceImplicitTLS defines whether to force use of implicit TLS (direct TLS connection) for better security.
-                              true: force use of implicit TLS (direct TLS connection on any port)
-                              false: force disable implicit TLS (use explicit TLS/STARTTLS if required)
-                              nil (default): auto-detect based on port (465=implicit, other=explicit) for backward compatibility
-                              It requires Alertmanager >= v0.31.0.
-                            type: boolean
                           from:
                             description: |-
                               from defines the sender address for email notifications.
@@ -1154,22 +1146,6 @@ spec:
                               This provides a fallback for email clients that don't support HTML.
                             minLength: 1
                             type: string
-                          threading:
-                            description: |-
-                              threading defines the threading configuration for email receiver.
-                              It requires Alertmanager >= v0.30.0.
-                            properties:
-                              threadByDate:
-                                description: |-
-                                  threadByDate defines what granularity of current date to thread by. Accepted values: Daily, None.
-                                  (None means group by alert group key, no date).
-                                enum:
-                                - Daily
-                                - None
-                                type: string
-                            required:
-                            - threadByDate
-                            type: object
                           tlsConfig:
                             description: |-
                               tlsConfig defines the TLS configuration for SMTP connections.
@@ -1833,7 +1809,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -2600,7 +2576,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -3438,7 +3414,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -4286,7 +4262,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -5146,7 +5122,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -6074,7 +6050,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -7067,7 +7043,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -7315,13 +7291,6 @@ spec:
                               linkNames enables automatic linking of channel names and usernames in the message.
                               When true, @channel and @username will be converted to clickable links.
                             type: boolean
-                          messageText:
-                            description: |-
-                              messageText defines text content of the Slack message.
-                              If set, this is sent as the top-level 'text' field in the Slack payload.
-                              It requires Alertmanager >= v0.31.0.
-                            minLength: 1
-                            type: string
                           mrkdwnIn:
                             description: |-
                               mrkdwnIn defines which fields should be parsed as Slack markdown.
@@ -7874,7 +7843,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -8151,12 +8120,6 @@ spec:
                                 - key
                                 type: object
                                 x-kubernetes-map-type: atomic
-                              externalId:
-                                description: |-
-                                  externalId defines the external ID used when assuming an AWS role. Can only be used with roleArn.
-                                  It requires Prometheus >= v3.11.0 or Alertmanager >= v0.33.0. Currently not supported by Thanos.
-                                minLength: 1
-                                type: string
                               profile:
                                 description: profile defines the named AWS profile
                                   used to authenticate.
@@ -8201,10 +8164,6 @@ spec:
                                   It requires Prometheus >= v2.54.0.
                                 type: boolean
                             type: object
-                            x-kubernetes-validations:
-                            - message: externalId can only be used when roleArn is
-                                specified
-                              rule: '!has(self.externalId) || has(self.roleArn)'
                           subject:
                             description: |-
                               subject defines the subject line when the message is delivered to email endpoints.
@@ -8761,7 +8720,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -9569,7 +9528,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -10319,7 +10278,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -11049,7 +11008,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -11286,14 +11245,6 @@ spec:
                             format: int32
                             minimum: 0
                             type: integer
-                          payload:
-                            description: |-
-                              payload define custom payload to be sent to the webhook endpoint.
-                              This is an advanced configuration option that allows you
-                              to define a custom payload using Go templates.
-                              It requires Alertmanager >= v0.32.0.
-                            minLength: 1
-                            type: string
                           sendResolved:
                             description: sendResolved defines whether or not to notify
                               about resolved alerts.
@@ -11869,7 +11820,7 @@ spec:
                                   tokenUrl:
                                     description: tokenUrl defines the URL to fetch
                                       the token from.
-                                    pattern: ^(http|https)://.+$
+                                    minLength: 1
                                     type: string
                                 required:
                                 - clientId
@@ -12371,8 +12322,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: alertmanagers.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -13996,7 +13947,7 @@ spec:
                               tokenUrl:
                                 description: tokenUrl defines the URL to fetch the
                                   token from.
-                                pattern: ^(http|https)://.+$
+                                minLength: 1
                                 type: string
                             required:
                             - clientId
@@ -14229,37 +14180,6 @@ spec:
                             pattern: ^(http|https)://.+$
                             type: string
                         type: object
-                      mattermost:
-                        description: mattermost defines the default Mattermost Config
-                        properties:
-                          webhookURL:
-                            description: |-
-                              webhookURL defines the default Mattermost Webhook URL.
-
-                              It requires Alertmanager >= v0.32.0.
-                            properties:
-                              key:
-                                description: The key of the secret to select from.  Must
-                                  be a valid secret key.
-                                type: string
-                              name:
-                                default: ""
-                                description: |-
-                                  Name of the referent.
-                                  This field is effectively required, but due to backwards compatibility is
-                                  allowed to be empty. Instances of this type with an empty value here are
-                                  almost certainly wrong.
-                                  More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
-                                type: string
-                              optional:
-                                description: Specify whether the Secret or its key
-                                  must be defined
-                                type: boolean
-                            required:
-                            - key
-                            type: object
-                            x-kubernetes-map-type: atomic
-                        type: object
                       opsGenieApiKey:
                         description: opsGenieApiKey defines the default OpsGenie API
                           Key.
@@ -14471,14 +14391,6 @@ spec:
                               LOGIN and PLAIN. If empty, Alertmanager doesn't authenticate
                               to the SMTP server.
                             type: string
-                          forceImplicitTLS:
-                            description: |-
-                              forceImplicitTLS defines whether to force use of implicit TLS (direct TLS connection) for better security.
-                              true: force use of implicit TLS (direct TLS connection on any port)
-                              false: force disable implicit TLS (use explicit TLS/STARTTLS if required)
-                              nil (default): auto-detect based on port (465=implicit, other=explicit) for backward compatibility
-                              It requires Alertmanager >= v0.31.0.
-                            type: boolean
                           from:
                             description: from defines the default SMTP From header
                               field.
@@ -15296,20 +15208,14 @@ spec:
                 type: string
               containers:
                 description: |-
-                  containers allows injecting additional containers or modifying operator
-                  generated containers. This can be used to allow adding an authentication
-                  proxy to the Pods or to change the behavior of an operator generated
-                  container. Containers described here modify an operator generated
-                  container if they share the same name and modifications are done via a
-                  strategic merge patch.
-
-                  The names of containers managed by the operator are:
-                  * `alertmanager`
-                  * `config-reloader`
-                  * `thanos-sidecar`
-
-                  Overriding containers which are managed by the operator require careful
-                  testing, especially when upgrading to a new version of the operator.
+                  containers allows injecting additional containers. This is meant to
+                  allow adding an authentication proxy to an Alertmanager pod.
+                  Containers described here modify an operator generated container if they
+                  share the same name and modifications are done via a strategic merge
+                  patch. The current container names are: `alertmanager` and
+                  `config-reloader`. Overriding containers is entirely outside the scope
+                  of what the maintainers will support and by doing so, you accept that
+                  this behaviour may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -16177,9 +16083,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -16408,6 +16312,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -16994,21 +16899,15 @@ spec:
                 type: array
               initContainers:
                 description: |-
-                  initContainers allows injecting initContainers to the Pod definition. Those
-                  can be used to e.g.  fetch secrets for injection into the Prometheus
-                  configuration from external sources. Any errors during the execution of
-                  an initContainer will lead to a restart of the Pod. More info:
-                  https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
-                  InitContainers described here modify an operator generated init
-                  containers if they share the same name and modifications are done via a
-                  strategic merge patch.
-
-                  The names of init container name managed by the operator are:
-                  * `init-config-reloader`.
-
-                  Overriding init containers which are managed by the operator require
-                  careful testing, especially when upgrading to a new version of the
-                  operator.
+                  initContainers allows adding initContainers to the pod definition. Those can be used to e.g.
+                  fetch secrets for injection into the Alertmanager configuration from external sources. Any
+                  errors during the execution of an initContainer will lead to a restart of the Pod. More info: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+                  InitContainers described here modify an operator
+                  generated init containers if they share the same name and modifications are
+                  done via a strategic merge patch. The current init container name is:
+                  `init-config-reloader`. Overriding init containers is entirely outside the
+                  scope of what the maintainers will support and by doing so, you accept that
+                  this behaviour may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -17876,9 +17775,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -18107,6 +18004,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -18767,11 +18665,6 @@ spec:
                   and the actual ExternalURL is still true, but the server serves requests
                   under a different route prefix. For example for use with `kubectl proxy`.
                 type: string
-              schedulerName:
-                description: schedulerName defines the scheduler to use for Pod scheduling.
-                  If not specified, the default scheduler is used.
-                minLength: 1
-                type: string
               secrets:
                 description: |-
                   secrets is a list of Secrets in the same namespace as the Alertmanager
@@ -19207,7 +19100,7 @@ spec:
                               resources:
                                 description: |-
                                   resources represents the minimum resources the volume should have.
-                                  Users are allowed to specify resource requirements
+                                  If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                   that are lower than previous value but must still be higher than capacity recorded in the
                                   status field of the claim.
                                   More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -19462,7 +19355,7 @@ spec:
                           resources:
                             description: |-
                               resources represents the minimum resources the volume should have.
-                              Users are allowed to specify resource requirements
+                              If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                               that are lower than previous value but must still be higher than capacity recorded in the
                               status field of the claim.
                               More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -19618,7 +19511,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                             x-kubernetes-map-type: granular
                           allocatedResources:
@@ -19650,7 +19545,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                           capacity:
                             additionalProperties:
@@ -19783,10 +19680,9 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Valid operators are Exists and Equal. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
-                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -20678,7 +20574,7 @@ spec:
                                 resources:
                                   description: |-
                                     resources represents the minimum resources the volume should have.
-                                    Users are allowed to specify resource requirements
+                                    If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                     that are lower than previous value but must still be higher than capacity recorded in the
                                     status field of the claim.
                                     More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -21010,7 +20906,7 @@ spec:
                         A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
                         The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
                         The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                        The volume will be mounted read-only (ro).
+                        The volume will be mounted read-only (ro) and non-executable files (noexec).
                         Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
                         The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                       properties:
@@ -21182,7 +21078,8 @@ spec:
                       description: |-
                         portworxVolume represents a portworx volume attached and mounted on kubelets host machine.
                         Deprecated: PortworxVolume is deprecated. All operations for the in-tree portworxVolume type
-                        are redirected to the pxd.portworx.com CSI driver.
+                        are redirected to the pxd.portworx.com CSI driver when the CSIMigrationPortworx feature-gate
+                        is on.
                       properties:
                         fsType:
                           description: |-
@@ -21556,24 +21453,6 @@ spec:
                                     description: Kubelet's generated CSRs will be
                                       addressed to this signer.
                                     type: string
-                                  userAnnotations:
-                                    additionalProperties:
-                                      type: string
-                                    description: |-
-                                      userAnnotations allow pod authors to pass additional information to
-                                      the signer implementation.  Kubernetes does not restrict or validate this
-                                      metadata in any way.
-
-                                      These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
-                                      the PodCertificateRequest objects that Kubelet creates.
-
-                                      Entries are subject to the same validation as object metadata annotations,
-                                      with the addition that all keys must be domain-prefixed. No restrictions
-                                      are placed on values, except an overall size limitation on the entire field.
-
-                                      Signers should document the keys and values they support. Signers should
-                                      deny requests that contain keys they do not recognize.
-                                    type: object
                                 required:
                                 - keyType
                                 - signerName
@@ -22382,8 +22261,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: podmonitors.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -22446,10 +22325,6 @@ spec:
 
                       The Prometheus service account must have the `list` and `watch`
                       permissions on the `Nodes` objects.
-
-                      Node metadata labels are not automatically added to scraped metrics. They are
-                      exposed as `__meta_kubernetes_node_*` labels and can be copied to timeseries
-                      with relabeling configuration.
                     type: boolean
                 type: object
               bodySizeLimit:
@@ -23151,7 +23026,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -23785,8 +23660,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: probes.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -24462,7 +24337,7 @@ spec:
                     type: object
                   tokenUrl:
                     description: tokenUrl defines the URL to fetch the token from.
-                    pattern: ^(http|https)://.+$
+                    minLength: 1
                     type: string
                 required:
                 - clientId
@@ -25201,8 +25076,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: prometheusagents.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -26675,8 +26550,9 @@ spec:
                   * `config-reloader`
                   * `thanos-sidecar`
 
-                  Overriding containers which are managed by the operator require careful
-                  testing, especially when upgrading to a new version of the operator.
+                  Overriding containers is entirely outside the scope of what the
+                  maintainers will support and by doing so, you accept that this behaviour
+                  may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -27544,9 +27420,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -27775,6 +27649,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -28583,7 +28458,7 @@ spec:
               initContainers:
                 description: |-
                   initContainers allows injecting initContainers to the Pod definition. Those
-                  can be used to e.g. fetch secrets for injection into the Prometheus
+                  can be used to e.g.  fetch secrets for injection into the Prometheus
                   configuration from external sources. Any errors during the execution of
                   an initContainer will lead to a restart of the Pod. More info:
                   https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
@@ -28594,9 +28469,9 @@ spec:
                   The names of init container name managed by the operator are:
                   * `init-config-reloader`.
 
-                  Overriding init containers which are managed by the operator require
-                  careful testing, especially when upgrading to a new version of the
-                  operator.
+                  Overriding init containers is entirely outside the scope of what the
+                  maintainers will support and by doing so, you accept that this behaviour
+                  may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -29464,9 +29339,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -29695,6 +29568,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -30257,26 +30131,6 @@ spec:
                       resource attributes to the `target_info` metric, on top of converting them into the `instance` and `job` labels.
 
                       It requires Prometheus >= v3.1.0.
-                    type: boolean
-                  labelNamePreserveMultipleUnderscores:
-                    description: |-
-                      labelNamePreserveMultipleUnderscores enables preserving of multiple consecutive underscores in label names when translation_strategy uses
-                      underscore escaping.
-                      When true (default), multiple consecutive underscores are preserved during label name sanitization.
-
-                      Notice: This one has no impact if `nameEscapingScheme` is `AllowUTF8`.
-
-                      It requires Prometheus >= v3.8.0.
-                    type: boolean
-                  labelNameUnderscoreSanitization:
-                    description: |-
-                      labelNameUnderscoreSanitization controls whether to enable prepending of 'key_' to labels starting with '_'.
-                      Reserved labels starting with '__' are not modified.
-                      This is only relevant when translation_strategy uses underscore escaping (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
-
-                      Notice: This one has no impact if `nameEscapingScheme` is `AllowUTF8`.
-
-                      It requires Prometheus >= v3.8.0.
                     type: boolean
                   promoteAllResourceAttributes:
                     description: |-
@@ -31305,7 +31159,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -31476,12 +31330,6 @@ spec:
                           - key
                           type: object
                           x-kubernetes-map-type: atomic
-                        externalId:
-                          description: |-
-                            externalId defines the external ID used when assuming an AWS role. Can only be used with roleArn.
-                            It requires Prometheus >= v3.11.0 or Alertmanager >= v0.33.0. Currently not supported by Thanos.
-                          minLength: 1
-                          type: string
                         profile:
                           description: profile defines the named AWS profile used
                             to authenticate.
@@ -31526,9 +31374,6 @@ spec:
                             It requires Prometheus >= v2.54.0.
                           type: boolean
                       type: object
-                      x-kubernetes-validations:
-                      - message: externalId can only be used when roleArn is specified
-                        rule: '!has(self.externalId) || has(self.roleArn)'
                     tlsConfig:
                       description: tlsConfig to use for the URL.
                       properties:
@@ -31709,11 +31554,9 @@ spec:
                           type: string
                       type: object
                     url:
-                      description: |-
-                        url defines the URL of the endpoint to send samples to.
-
-                        It must use the HTTP or HTTPS scheme.
-                      pattern: ^(http|https)://.+$
+                      description: url defines the URL of the endpoint to send samples
+                        to.
+                      minLength: 1
                       type: string
                     writeRelabelConfigs:
                       description: writeRelabelConfigs defines the list of remote
@@ -31928,11 +31771,6 @@ spec:
                   If you want to enforce a maximum limit for all scrape objects, refer to enforcedSampleLimit.
                 format: int64
                 type: integer
-              schedulerName:
-                description: schedulerName defines the scheduler to use for Pod scheduling.
-                  If not specified, the default scheduler is used.
-                minLength: 1
-                type: string
               scrapeClasses:
                 description: |-
                   scrapeClasses defines the list of scrape classes to expose to scraping objects such as
@@ -31955,10 +31793,6 @@ spec:
 
                             The Prometheus service account must have the `list` and `watch`
                             permissions on the `Nodes` objects.
-
-                            Node metadata labels are not automatically added to scraped metrics. They are
-                            exposed as `__meta_kubernetes_node_*` labels and can be copied to timeseries
-                            with relabeling configuration.
                           type: boolean
                       type: object
                     authorization:
@@ -32422,8 +32256,7 @@ spec:
                   matches all namespaces. A null label selector matches the current
                   namespace only.
 
-                  Note that the ScrapeConfig custom resource definition is currently at Alpha level
-                  and will be graduated to Beta in a future release.
+                  Note that the ScrapeConfig custom resource definition is currently at Alpha level.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -32482,8 +32315,7 @@ spec:
                   of the custom resource definition. It is recommended to use
                   `spec.additionalScrapeConfigs` instead.
 
-                  Note that the ScrapeConfig custom resource definition is currently at Alpha level
-                  and will be graduated to Beta in a future release.
+                  Note that the ScrapeConfig custom resource definition is currently at Alpha level.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -32963,54 +32795,6 @@ spec:
                   See https://kubernetes.io/docs/concepts/workloads/controllers/statefulset/#stable-network-id for more details.
                 minLength: 1
                 type: string
-              shardingStrategy:
-                description: |-
-                  shardingStrategy defines the sharding strategy for distributing scraped targets across Prometheus shards.
-
-                  When not defined, the operator defaults to the 'Address' mode which distributes
-                  targets based on a hash of the target address.
-                properties:
-                  mode:
-                    description: |-
-                      mode defines the sharding mode. Can be 'Address' or 'Topology'.
-
-                      'Address' is the default mode and distributes targets across shards
-                      based on a hash of the target address.
-
-                      'Topology' enables zone-aware sharding where each shard is assigned to a
-                      specific topology zone and only scrapes targets in that zone.
-                      (Alpha) Using the 'Topology' mode requires the `PrometheusTopologySharding`
-                      feature gate to be enabled.
-                    enum:
-                    - Address
-                    - Topology
-                    type: string
-                  topology:
-                    description: |-
-                      topology defines the configuration for topology-aware sharding.
-                      This field is only valid when mode is set to 'Topology'.
-                    properties:
-                      externalLabelName:
-                        description: |-
-                          externalLabelName defines the name of the Prometheus external label used
-                          to communicate the topology zone assigned to the Prometheus instance.
-                          If not defined, it defaults to "zone".
-                          If set to the empty string, no external label is added to the Prometheus configuration.
-                        type: string
-                      values:
-                        description: |-
-                          values defines the list of topology values (e.g. zone names) to be used
-                          for sharding. The configured number of shards must be greater than or
-                          equal to the number of values.
-                        items:
-                          type: string
-                        type: array
-                        x-kubernetes-list-type: atomic
-                    type: object
-                type: object
-                x-kubernetes-validations:
-                - message: topology can only be defined when mode is set to 'Topology'
-                  rule: '!has(self.topology) || (has(self.mode) && self.mode == ''Topology'')'
               shards:
                 description: |-
                   shards defines the number of shards to distribute the scraped targets onto.
@@ -33210,7 +32994,7 @@ spec:
                               resources:
                                 description: |-
                                   resources represents the minimum resources the volume should have.
-                                  Users are allowed to specify resource requirements
+                                  If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                   that are lower than previous value but must still be higher than capacity recorded in the
                                   status field of the claim.
                                   More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -33465,7 +33249,7 @@ spec:
                           resources:
                             description: |-
                               resources represents the minimum resources the volume should have.
-                              Users are allowed to specify resource requirements
+                              If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                               that are lower than previous value but must still be higher than capacity recorded in the
                               status field of the claim.
                               More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -33621,7 +33405,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                             x-kubernetes-map-type: granular
                           allocatedResources:
@@ -33653,7 +33439,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                           capacity:
                             additionalProperties:
@@ -33789,10 +33577,9 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Valid operators are Exists and Equal. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
-                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -34242,26 +34029,6 @@ spec:
                       It requires Prometheus >= v2.39.0 or PrometheusAgent >= v2.54.0.
                     pattern: ^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
                     type: string
-                  staleSeriesCompactionThreshold:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    description: |-
-                      staleSeriesCompactionThreshold configures the trigger point for compacting
-                      stale series from memory into persistent blocks and removing those stale
-                      series from memory.
-
-                      The threshold is a number between 0.0 and 1.0. It represents the ratio of
-                      stale series in memory to the total series in memory. The stale series
-                      compaction is triggered when this ratio crosses the configured threshold.
-                      It may not trigger the stale series compaction if the usual head compaction
-                      is about to happen soon.
-
-                      If set to 0, stale series compaction is disabled.
-
-                      It requires Prometheus >= v3.10.0.
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
                 type: object
               updateStrategy:
                 description: |-
@@ -34970,7 +34737,7 @@ spec:
                                 resources:
                                   description: |-
                                     resources represents the minimum resources the volume should have.
-                                    Users are allowed to specify resource requirements
+                                    If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                     that are lower than previous value but must still be higher than capacity recorded in the
                                     status field of the claim.
                                     More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -35302,7 +35069,7 @@ spec:
                         A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
                         The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
                         The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                        The volume will be mounted read-only (ro).
+                        The volume will be mounted read-only (ro) and non-executable files (noexec).
                         Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
                         The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                       properties:
@@ -35474,7 +35241,8 @@ spec:
                       description: |-
                         portworxVolume represents a portworx volume attached and mounted on kubelets host machine.
                         Deprecated: PortworxVolume is deprecated. All operations for the in-tree portworxVolume type
-                        are redirected to the pxd.portworx.com CSI driver.
+                        are redirected to the pxd.portworx.com CSI driver when the CSIMigrationPortworx feature-gate
+                        is on.
                       properties:
                         fsType:
                           description: |-
@@ -35848,24 +35616,6 @@ spec:
                                     description: Kubelet's generated CSRs will be
                                       addressed to this signer.
                                     type: string
-                                  userAnnotations:
-                                    additionalProperties:
-                                      type: string
-                                    description: |-
-                                      userAnnotations allow pod authors to pass additional information to
-                                      the signer implementation.  Kubernetes does not restrict or validate this
-                                      metadata in any way.
-
-                                      These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
-                                      the PodCertificateRequest objects that Kubelet creates.
-
-                                      Entries are subject to the same validation as object metadata annotations,
-                                      with the addition that all keys must be domain-prefixed. No restrictions
-                                      are placed on values, except an overall size limitation on the entire field.
-
-                                      Signers should document the keys and values they support. Signers should
-                                      deny requests that contain keys they do not recognize.
-                                    type: object
                                 required:
                                 - keyType
                                 - signerName
@@ -36603,14 +36353,6 @@ spec:
               rule: '!(has(self.mode) && self.mode == ''DaemonSet'' && has(self.serviceMonitorNamespaceSelector))'
             - message: additionalScrapeConfigs cannot be set when mode is DaemonSet
               rule: '!(has(self.mode) && self.mode == ''DaemonSet'' && has(self.additionalScrapeConfigs))'
-            - message: shardingStrategy cannot be set when mode is DaemonSet
-              rule: '!(has(self.mode) && self.mode == ''DaemonSet'' && has(self.shardingStrategy))'
-            - message: shards must be greater than or equal to the number of topology
-                values when sharding strategy mode is Topology
-              rule: '!has(self.shardingStrategy) || !has(self.shardingStrategy.mode)
-                || self.shardingStrategy.mode != ''Topology'' || !has(self.shardingStrategy.topology)
-                || !has(self.shardingStrategy.topology.values) || self.shardingStrategy.topology.values.size()
-                == 0 || (has(self.shards) ? self.shards : 1) >= self.shardingStrategy.topology.values.size()'
           status:
             description: |-
               status defines the most recent observed status of the Prometheus cluster. Read-only.
@@ -36758,8 +36500,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: prometheuses.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -38310,12 +38052,6 @@ spec:
                               - key
                               type: object
                               x-kubernetes-map-type: atomic
-                            externalId:
-                              description: |-
-                                externalId defines the external ID used when assuming an AWS role. Can only be used with roleArn.
-                                It requires Prometheus >= v3.11.0 or Alertmanager >= v0.33.0. Currently not supported by Thanos.
-                              minLength: 1
-                              type: string
                             profile:
                               description: profile defines the named AWS profile used
                                 to authenticate.
@@ -38360,9 +38096,6 @@ spec:
                                 It requires Prometheus >= v2.54.0.
                               type: boolean
                           type: object
-                          x-kubernetes-validations:
-                          - message: externalId can only be used when roleArn is specified
-                            rule: '!has(self.externalId) || has(self.roleArn)'
                         timeout:
                           description: timeout defines a per-target Alertmanager timeout
                             when pushing alerts.
@@ -38992,8 +38725,9 @@ spec:
                   * `config-reloader`
                   * `thanos-sidecar`
 
-                  Overriding containers which are managed by the operator require careful
-                  testing, especially when upgrading to a new version of the operator.
+                  Overriding containers is entirely outside the scope of what the
+                  maintainers will support and by doing so, you accept that this behaviour
+                  may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -39861,9 +39595,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -40092,6 +39824,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -40942,7 +40675,7 @@ spec:
               initContainers:
                 description: |-
                   initContainers allows injecting initContainers to the Pod definition. Those
-                  can be used to e.g. fetch secrets for injection into the Prometheus
+                  can be used to e.g.  fetch secrets for injection into the Prometheus
                   configuration from external sources. Any errors during the execution of
                   an initContainer will lead to a restart of the Pod. More info:
                   https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
@@ -40953,9 +40686,9 @@ spec:
                   The names of init container name managed by the operator are:
                   * `init-config-reloader`.
 
-                  Overriding init containers which are managed by the operator require
-                  careful testing, especially when upgrading to a new version of the
-                  operator.
+                  Overriding init containers is entirely outside the scope of what the
+                  maintainers will support and by doing so, you accept that this behaviour
+                  may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -41823,9 +41556,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -42054,6 +41785,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -42607,26 +42339,6 @@ spec:
                       resource attributes to the `target_info` metric, on top of converting them into the `instance` and `job` labels.
 
                       It requires Prometheus >= v3.1.0.
-                    type: boolean
-                  labelNamePreserveMultipleUnderscores:
-                    description: |-
-                      labelNamePreserveMultipleUnderscores enables preserving of multiple consecutive underscores in label names when translation_strategy uses
-                      underscore escaping.
-                      When true (default), multiple consecutive underscores are preserved during label name sanitization.
-
-                      Notice: This one has no impact if `nameEscapingScheme` is `AllowUTF8`.
-
-                      It requires Prometheus >= v3.8.0.
-                    type: boolean
-                  labelNameUnderscoreSanitization:
-                    description: |-
-                      labelNameUnderscoreSanitization controls whether to enable prepending of 'key_' to labels starting with '_'.
-                      Reserved labels starting with '__' are not modified.
-                      This is only relevant when translation_strategy uses underscore escaping (e.g., "UnderscoreEscapingWithSuffixes" or "UnderscoreEscapingWithoutSuffixes").
-
-                      Notice: This one has no impact if `nameEscapingScheme` is `AllowUTF8`.
-
-                      It requires Prometheus >= v3.8.0.
                     type: boolean
                   promoteAllResourceAttributes:
                     description: |-
@@ -43558,7 +43270,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -43806,11 +43518,7 @@ spec:
                           type: string
                       type: object
                     url:
-                      description: |-
-                        url defines the URL of the endpoint to query from.
-
-                        It must use the HTTP or HTTPS scheme.
-                      pattern: ^(http|https)://.+$
+                      description: url defines the URL of the endpoint to query from.
                       type: string
                   required:
                   - url
@@ -44465,7 +44173,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -44636,12 +44344,6 @@ spec:
                           - key
                           type: object
                           x-kubernetes-map-type: atomic
-                        externalId:
-                          description: |-
-                            externalId defines the external ID used when assuming an AWS role. Can only be used with roleArn.
-                            It requires Prometheus >= v3.11.0 or Alertmanager >= v0.33.0. Currently not supported by Thanos.
-                          minLength: 1
-                          type: string
                         profile:
                           description: profile defines the named AWS profile used
                             to authenticate.
@@ -44686,9 +44388,6 @@ spec:
                             It requires Prometheus >= v2.54.0.
                           type: boolean
                       type: object
-                      x-kubernetes-validations:
-                      - message: externalId can only be used when roleArn is specified
-                        rule: '!has(self.externalId) || has(self.roleArn)'
                     tlsConfig:
                       description: tlsConfig to use for the URL.
                       properties:
@@ -44869,11 +44568,9 @@ spec:
                           type: string
                       type: object
                     url:
-                      description: |-
-                        url defines the URL of the endpoint to send samples to.
-
-                        It must use the HTTP or HTTPS scheme.
-                      pattern: ^(http|https)://.+$
+                      description: url defines the URL of the endpoint to send samples
+                        to.
+                      minLength: 1
                       type: string
                     writeRelabelConfigs:
                       description: writeRelabelConfigs defines the list of remote
@@ -45233,11 +44930,6 @@ spec:
                   If you want to enforce a maximum limit for all scrape objects, refer to enforcedSampleLimit.
                 format: int64
                 type: integer
-              schedulerName:
-                description: schedulerName defines the scheduler to use for Pod scheduling.
-                  If not specified, the default scheduler is used.
-                minLength: 1
-                type: string
               scrapeClasses:
                 description: |-
                   scrapeClasses defines the list of scrape classes to expose to scraping objects such as
@@ -45260,10 +44952,6 @@ spec:
 
                             The Prometheus service account must have the `list` and `watch`
                             permissions on the `Nodes` objects.
-
-                            Node metadata labels are not automatically added to scraped metrics. They are
-                            exposed as `__meta_kubernetes_node_*` labels and can be copied to timeseries
-                            with relabeling configuration.
                           type: boolean
                       type: object
                     authorization:
@@ -45727,8 +45415,7 @@ spec:
                   matches all namespaces. A null label selector matches the current
                   namespace only.
 
-                  Note that the ScrapeConfig custom resource definition is currently at Alpha level
-                  and will be graduated to Beta in a future release.
+                  Note that the ScrapeConfig custom resource definition is currently at Alpha level.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -45787,8 +45474,7 @@ spec:
                   of the custom resource definition. It is recommended to use
                   `spec.additionalScrapeConfigs` instead.
 
-                  Note that the ScrapeConfig custom resource definition is currently at Alpha level
-                  and will be graduated to Beta in a future release.
+                  Note that the ScrapeConfig custom resource definition is currently at Alpha level.
                 properties:
                   matchExpressions:
                     description: matchExpressions is a list of label selector requirements.
@@ -46275,22 +45961,20 @@ spec:
               shardRetentionPolicy:
                 description: |-
                   shardRetentionPolicy defines the retention policy for the Prometheus shards.
+                  (Alpha) Using this field requires the 'PrometheusShardRetentionPolicy' feature gate to be enabled.
 
-                  (Beta) Using this mode requires the `PrometheusShardRetentionPolicy` feature gate (enabled by default).
+                  The final goals for this feature can be seen at https://github.com/prometheus-operator/prometheus-operator/blob/main/Documentation/proposals/202310-shard-autoscaling.md#graceful-scale-down-of-prometheus-servers,
+                  however, the feature is not yet fully implemented in this PR. The limitation being:
+                  * Retention duration is not settable, for now, shards are retained forever.
                 properties:
                   retain:
                     description: |-
-                      retain defines the config for retention when the retention policy is set
-                      to `Retain`.
-
-                      If not defined, the operator will use the retention duration configured
-                      for the Prometheus data. If the resource uses size-based retention, the
-                      shard(s) are kept forever (unless manually deleted).
+                      retain defines the config for retention when the retention policy is set to `Retain`.
+                      This field is ineffective as of now.
                     properties:
                       retentionPeriod:
-                        description: |-
-                          retentionPeriod defines how long the scaled-down shard(s) need to be
-                          kept before being deleted.
+                        description: retentionPeriod defines the retentionPeriod for
+                          shard retention policy.
                         pattern: ^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
                         type: string
                     required:
@@ -46308,54 +45992,6 @@ spec:
                     - Delete
                     type: string
                 type: object
-              shardingStrategy:
-                description: |-
-                  shardingStrategy defines the sharding strategy for distributing scraped targets across Prometheus shards.
-
-                  When not defined, the operator defaults to the 'Address' mode which distributes
-                  targets based on a hash of the target address.
-                properties:
-                  mode:
-                    description: |-
-                      mode defines the sharding mode. Can be 'Address' or 'Topology'.
-
-                      'Address' is the default mode and distributes targets across shards
-                      based on a hash of the target address.
-
-                      'Topology' enables zone-aware sharding where each shard is assigned to a
-                      specific topology zone and only scrapes targets in that zone.
-                      (Alpha) Using the 'Topology' mode requires the `PrometheusTopologySharding`
-                      feature gate to be enabled.
-                    enum:
-                    - Address
-                    - Topology
-                    type: string
-                  topology:
-                    description: |-
-                      topology defines the configuration for topology-aware sharding.
-                      This field is only valid when mode is set to 'Topology'.
-                    properties:
-                      externalLabelName:
-                        description: |-
-                          externalLabelName defines the name of the Prometheus external label used
-                          to communicate the topology zone assigned to the Prometheus instance.
-                          If not defined, it defaults to "zone".
-                          If set to the empty string, no external label is added to the Prometheus configuration.
-                        type: string
-                      values:
-                        description: |-
-                          values defines the list of topology values (e.g. zone names) to be used
-                          for sharding. The configured number of shards must be greater than or
-                          equal to the number of values.
-                        items:
-                          type: string
-                        type: array
-                        x-kubernetes-list-type: atomic
-                    type: object
-                type: object
-                x-kubernetes-validations:
-                - message: topology can only be defined when mode is set to 'Topology'
-                  rule: '!has(self.topology) || (has(self.mode) && self.mode == ''Topology'')'
               shards:
                 description: |-
                   shards defines the number of shards to distribute the scraped targets onto.
@@ -46555,7 +46191,7 @@ spec:
                               resources:
                                 description: |-
                                   resources represents the minimum resources the volume should have.
-                                  Users are allowed to specify resource requirements
+                                  If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                   that are lower than previous value but must still be higher than capacity recorded in the
                                   status field of the claim.
                                   More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -46810,7 +46446,7 @@ spec:
                           resources:
                             description: |-
                               resources represents the minimum resources the volume should have.
-                              Users are allowed to specify resource requirements
+                              If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                               that are lower than previous value but must still be higher than capacity recorded in the
                               status field of the claim.
                               More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -46966,7 +46602,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                             x-kubernetes-map-type: granular
                           allocatedResources:
@@ -46998,7 +46636,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                           capacity:
                             additionalProperties:
@@ -47182,7 +46822,7 @@ spec:
                     description: |-
                       grpcServerTlsConfig defines the TLS parameters for the gRPC server providing the StoreAPI.
 
-                      Note: Currently only the `minVersion`, `caFile`, `certFile`, `keyFile`, `cipherSuites` and `curves` fields are supported.
+                      Note: Currently only the `caFile`, `certFile`, and `keyFile` fields are supported.
                     properties:
                       ca:
                         description: ca defines the Certificate authority used when
@@ -47300,38 +46940,6 @@ spec:
                         description: certFile defines the path to the client cert
                           file in the Prometheus container for the targets.
                         type: string
-                      cipherSuites:
-                        description: |-
-                          cipherSuites defines the list of supported cipher suites for TLS
-                          versions up to TLS 1.2.
-
-                          If not defined, the Go default cipher suites are used.
-                          Available cipher suites are documented in the Go documentation:
-                          https://golang.org/pkg/crypto/tls/#pkg-constants
-
-                          It requires Thanos >= v0.42.0. Note that the operator doesn't verify if
-                          the Thanos version supports the provided values.
-                        items:
-                          type: string
-                        minItems: 1
-                        type: array
-                        x-kubernetes-list-type: set
-                      curves:
-                        description: |-
-                          curves defines the list of preferred elliptic curves for
-                          TLS handshakes.
-
-                          If not defined, the Go default curves are used.
-                          Available curves are documented in the Go documentation:
-                          https://golang.org/pkg/crypto/tls/#CurveID
-
-                          It requires Thanos >= v0.42.0. Note that the operator doesn't verify if
-                          the Thanos version supports the provided values.
-                        items:
-                          type: string
-                        minItems: 1
-                        type: array
-                        x-kubernetes-list-type: set
                       insecureSkipVerify:
                         description: insecureSkipVerify defines how to disable target
                           certificate validation.
@@ -47690,10 +47298,9 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Valid operators are Exists and Equal. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
-                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -48143,26 +47750,6 @@ spec:
                       It requires Prometheus >= v2.39.0 or PrometheusAgent >= v2.54.0.
                     pattern: ^(0|(([0-9]+)y)?(([0-9]+)w)?(([0-9]+)d)?(([0-9]+)h)?(([0-9]+)m)?(([0-9]+)s)?(([0-9]+)ms)?)$
                     type: string
-                  staleSeriesCompactionThreshold:
-                    anyOf:
-                    - type: integer
-                    - type: string
-                    description: |-
-                      staleSeriesCompactionThreshold configures the trigger point for compacting
-                      stale series from memory into persistent blocks and removing those stale
-                      series from memory.
-
-                      The threshold is a number between 0.0 and 1.0. It represents the ratio of
-                      stale series in memory to the total series in memory. The stale series
-                      compaction is triggered when this ratio crosses the configured threshold.
-                      It may not trigger the stale series compaction if the usual head compaction
-                      is about to happen soon.
-
-                      If set to 0, stale series compaction is disabled.
-
-                      It requires Prometheus >= v3.10.0.
-                    pattern: ^(\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))(([KMGTPE]i)|[numkMGTPE]|([eE](\+|-)?(([0-9]+(\.[0-9]*)?)|(\.[0-9]+))))?$
-                    x-kubernetes-int-or-string: true
                 type: object
               updateStrategy:
                 description: |-
@@ -48871,7 +48458,7 @@ spec:
                                 resources:
                                   description: |-
                                     resources represents the minimum resources the volume should have.
-                                    Users are allowed to specify resource requirements
+                                    If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                     that are lower than previous value but must still be higher than capacity recorded in the
                                     status field of the claim.
                                     More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -49203,7 +48790,7 @@ spec:
                         A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
                         The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
                         The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                        The volume will be mounted read-only (ro).
+                        The volume will be mounted read-only (ro) and non-executable files (noexec).
                         Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
                         The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                       properties:
@@ -49375,7 +48962,8 @@ spec:
                       description: |-
                         portworxVolume represents a portworx volume attached and mounted on kubelets host machine.
                         Deprecated: PortworxVolume is deprecated. All operations for the in-tree portworxVolume type
-                        are redirected to the pxd.portworx.com CSI driver.
+                        are redirected to the pxd.portworx.com CSI driver when the CSIMigrationPortworx feature-gate
+                        is on.
                       properties:
                         fsType:
                           description: |-
@@ -49749,24 +49337,6 @@ spec:
                                     description: Kubelet's generated CSRs will be
                                       addressed to this signer.
                                     type: string
-                                  userAnnotations:
-                                    additionalProperties:
-                                      type: string
-                                    description: |-
-                                      userAnnotations allow pod authors to pass additional information to
-                                      the signer implementation.  Kubernetes does not restrict or validate this
-                                      metadata in any way.
-
-                                      These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
-                                      the PodCertificateRequest objects that Kubelet creates.
-
-                                      Entries are subject to the same validation as object metadata annotations,
-                                      with the addition that all keys must be domain-prefixed. No restrictions
-                                      are placed on values, except an overall size limitation on the entire field.
-
-                                      Signers should document the keys and values they support. Signers should
-                                      deny requests that contain keys they do not recognize.
-                                    type: object
                                 required:
                                 - keyType
                                 - signerName
@@ -50478,13 +50048,6 @@ spec:
                     type: object
                 type: object
             type: object
-            x-kubernetes-validations:
-            - message: shards must be greater than or equal to the number of topology
-                values when sharding strategy mode is Topology
-              rule: '!has(self.shardingStrategy) || !has(self.shardingStrategy.mode)
-                || self.shardingStrategy.mode != ''Topology'' || !has(self.shardingStrategy.topology)
-                || !has(self.shardingStrategy.topology.values) || self.shardingStrategy.topology.values.size()
-                == 0 || (has(self.shards) ? self.shards : 1) >= self.shardingStrategy.topology.values.size()'
           status:
             description: |-
               status defines the most recent observed status of the Prometheus cluster. Read-only.
@@ -50632,8 +50195,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: prometheusrules.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -50899,8 +50462,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: scrapeconfigs.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -50998,7 +50561,6 @@ spec:
                       - OAuth
                       - ManagedIdentity
                       - SDK
-                      - WorkloadIdentity
                       type: string
                     authorization:
                       description: |-
@@ -51469,7 +51031,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -51551,7 +51113,7 @@ spec:
                       minLength: 1
                       type: string
                     tlsConfig:
-                      description: tlsConfig defines the TLS configuration applying
+                      description: tlsConfig defies the TLS configuration applying
                         to the target HTTP endpoint.
                       properties:
                         ca:
@@ -51910,7 +51472,7 @@ spec:
                     filter:
                       description: |-
                         filter defines the filter expression used to filter the catalog results.
-                        See https://developer.hashicorp.com/consul/api-docs/catalog#filtering
+                        See https://www.consul.io/api-docs/catalog#list-services
                         It requires Prometheus >= 3.0.0.
                       minLength: 1
                       type: string
@@ -51918,13 +51480,6 @@ spec:
                       description: followRedirects defines whether HTTP requests follow
                         HTTP 3xx redirects.
                       type: boolean
-                    healthFilter:
-                      description: |-
-                        healthFilter defines the filter expression used to filter the health results.
-                        See https://developer.hashicorp.com/consul/api-docs/health#filtering
-                        It requires Prometheus >= 3.11.2.
-                      minLength: 1
-                      type: string
                     namespace:
                       description: |-
                         namespace are only supported in Consul Enterprise.
@@ -52271,7 +51826,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -52588,7 +52143,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the DigitalOcean API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -52962,7 +52517,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -53028,7 +52583,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the DigitalOcean API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -53257,7 +52812,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Docker daemon.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -53363,7 +52918,6 @@ spec:
                         properties:
                           name:
                             description: name of the Filter.
-                            minLength: 1
                             type: string
                           values:
                             description: values defines values to filter on.
@@ -53386,9 +52940,8 @@ spec:
                         HTTP 3xx redirects.
                       type: boolean
                     host:
-                      description: host defines the address of the docker daemon.
+                      description: host defines the address of the docker daemon
                       minLength: 1
-                      pattern: ^[a-zA-Z][a-zA-Z0-9+.-]*://.+$
                       type: string
                     hostNetworkingHost:
                       description: hostNetworkingHost defines the host to use if the
@@ -53731,7 +53284,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -53797,7 +53350,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Docker daemon.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -53977,7 +53530,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Docker Swarm API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -54088,7 +53641,6 @@ spec:
                         properties:
                           name:
                             description: name of the Filter.
-                            minLength: 1
                             type: string
                           values:
                             description: values defines values to filter on.
@@ -54445,7 +53997,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -54520,7 +54072,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Docker Swarm daemon.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -54746,7 +54298,6 @@ spec:
                         properties:
                           name:
                             description: name of the Filter.
-                            minLength: 1
                             type: string
                           values:
                             description: values defines values to filter on.
@@ -54870,7 +54421,7 @@ spec:
                       x-kubernetes-map-type: atomic
                     tlsConfig:
                       description: |-
-                        tlsConfig defines the TLS configuration to connect to the EC2 API.
+                        tlsConfig defines the TLS configuration to connect to the Consul API.
                         It requires Prometheus >= v2.41.0
                       properties:
                         ca:
@@ -55061,7 +54612,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Eureka server.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -55492,7 +55043,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -55552,11 +55103,12 @@ spec:
                     server:
                       description: server defines the URL to connect to the Eureka
                         server.
-                      pattern: ^https?://.+$
+                      minLength: 1
+                      pattern: ^http(s)?://.+$
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Eureka server.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -55839,7 +55391,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Hetzner API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -56276,7 +55828,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -56351,7 +55903,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Hetzner API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -56975,7 +56527,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -57203,7 +56755,8 @@ spec:
                     url:
                       description: url defines the URL from which the targets are
                         fetched.
-                      pattern: ^https?://.+$
+                      minLength: 1
+                      pattern: ^http(s)?://.+$
                       type: string
                   required:
                   - url
@@ -57219,7 +56772,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the IONOS API.
+                        authorization defines the  header configuration to authenticate against the IONOS.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -57598,7 +57151,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -57664,7 +57217,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the IONOS API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -58335,7 +57888,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -58618,7 +58171,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Kuma control plane.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -59060,7 +58613,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -59124,7 +58677,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Kuma control plane.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -59346,7 +58899,7 @@ spec:
                       x-kubernetes-map-type: atomic
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Lightsail API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -59783,7 +59336,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -59854,7 +59407,6 @@ spec:
                     roleARN:
                       description: roleARN defines the AWS Role ARN, an alternative
                         to using AWS API keys.
-                      minLength: 1
                       type: string
                     secretKey:
                       description: secretKey defines the AWS API secret.
@@ -59882,7 +59434,7 @@ spec:
                       x-kubernetes-map-type: atomic
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Lightsail API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -60060,7 +59612,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Linode API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -60435,7 +59987,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -60510,7 +60062,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Linode API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -60832,7 +60384,7 @@ spec:
                       type: boolean
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the Nomad API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -60937,7 +60489,6 @@ spec:
                       description: |-
                         namespace defines the Nomad namespace to query for service discovery.
                         When specified, only resources within this namespace will be discovered.
-                      minLength: 1
                       type: string
                     noProxy:
                       description: |-
@@ -61269,7 +60820,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -61330,23 +60881,21 @@ spec:
                       description: |-
                         region defines the Nomad region to query for service discovery.
                         When specified, only resources within this region will be discovered.
-                      minLength: 1
                       type: string
                     server:
                       description: |-
                         server defines the Nomad server address to connect to for service discovery.
                         This should be the full URL including protocol (e.g., "https://nomad.example.com:4646").
-                      pattern: ^https?://.+$
+                      minLength: 1
                       type: string
                     tagSeparator:
                       description: |-
                         tagSeparator defines the separator used to join multiple tags.
                         This determines how Nomad service tags are concatenated into Prometheus labels.
-                      minLength: 1
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Nomad API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -61837,7 +61386,7 @@ spec:
                     type: object
                   tokenUrl:
                     description: tokenUrl defines the URL to fetch the token from.
-                    pattern: ^(http|https)://.+$
+                    minLength: 1
                     type: string
                 required:
                 - clientId
@@ -61859,7 +61408,6 @@ spec:
                       type: boolean
                     applicationCredentialId:
                       description: applicationCredentialId defines the OpenStack applicationCredentialId.
-                      minLength: 1
                       type: string
                     applicationCredentialName:
                       description: |-
@@ -61920,7 +61468,7 @@ spec:
                       description: |-
                         identityEndpoint defines the HTTP endpoint that is required to work with
                         the Identity API of the appropriate version.
-                      pattern: ^https?://.+$
+                      pattern: ^http(s)?:\/\/.+$
                       type: string
                     password:
                       description: |-
@@ -62328,7 +61876,7 @@ spec:
                   properties:
                     authorization:
                       description: |-
-                        authorization defines the header configuration to authenticate against the PuppetDB API.
+                        authorization defines the  header configuration to authenticate against the DigitalOcean API.
                         Cannot be set at the same time as `oauth2`.
                       properties:
                         credentials:
@@ -62767,7 +62315,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -62839,7 +62387,7 @@ spec:
                       type: string
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the PuppetDB server.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -63008,7 +62556,8 @@ spec:
                     url:
                       description: url defines the URL of the PuppetDB root query
                         endpoint.
-                      pattern: ^https?://.+$
+                      minLength: 1
+                      pattern: ^http(s)?://.+$
                       type: string
                   required:
                   - query
@@ -63119,9 +62668,6 @@ spec:
                   description: |-
                     ScalewaySDConfig configurations allow retrieving scrape targets from Scaleway instances and baremetal services.
                     See https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scaleway_sd_config
-
-                    Note: The `_file` variants of credential fields (e.g. `secret_key_file`)
-                    from the Prometheus configuration are not supported. Use Kubernetes secrets via `secretKey` instead.
                   properties:
                     accessKey:
                       description: accessKey defines the access key to use. https://console.scaleway.com/project/credentials
@@ -63130,7 +62676,7 @@ spec:
                     apiURL:
                       description: apiURL defines the API URL to use when doing the
                         server listing requests.
-                      pattern: ^https?://.+$
+                      pattern: ^http(s)?://.+$
                       type: string
                     enableHTTP2:
                       description: enableHTTP2 defines whether to enable HTTP2.
@@ -63257,7 +62803,7 @@ spec:
                       x-kubernetes-list-type: set
                     tlsConfig:
                       description: tlsConfig defines the TLS configuration to connect
-                        to the Scaleway API.
+                        to the Consul API.
                       properties:
                         ca:
                           description: ca defines the Certificate authority used when
@@ -63516,9 +63062,9 @@ spec:
                       description: targets defines the list of targets for this static
                         configuration.
                       items:
-                        description: Target represents a target for Prometheus to
-                          scrape
-                        minLength: 1
+                        description: |-
+                          Target represents a target for Prometheus to scrape
+                          kubebuilder:validation:MinLength:=1
                         type: string
                       minItems: 1
                       type: array
@@ -63708,10 +63254,6 @@ spec:
                   It requires Prometheus >= v2.48.0.
                 type: boolean
             type: object
-            x-kubernetes-validations:
-            - message: at most one of basicAuth, authorization, or oauth2 can be configured
-              rule: '[has(self.basicAuth), has(self.authorization), has(self.oauth2)].filter(x,
-                x).size() <= 1'
           status:
             description: |-
               status defines the status subresource. It is under active development and is updated only when the
@@ -63828,8 +63370,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: servicemonitors.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -63893,10 +63435,6 @@ spec:
 
                       The Prometheus service account must have the `list` and `watch`
                       permissions on the `Nodes` objects.
-
-                      Node metadata labels are not automatically added to scraped metrics. They are
-                      exposed as `__meta_kubernetes_node_*` labels and can be copied to timeseries
-                      with relabeling configuration.
                     type: boolean
                 type: object
               bodySizeLimit:
@@ -64518,7 +64056,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -64540,8 +64078,7 @@ spec:
                       type: string
                     port:
                       description: |-
-                        port defines the name of the Service port which this endpoint refers to
-                        (e.g. `.spec.ports[].name`).
+                        port defines the name of the Service port which this endpoint refers to.
 
                         It takes precedence over `targetPort`.
                       type: string
@@ -64707,10 +64244,8 @@ spec:
                       - type: integer
                       - type: string
                       description: |-
-                        targetPort defines the name or number of a container port on Pods selected
-                        by the Service.
-                        If a name, it matches against `.spec.containers[].ports[].name` of the Pods.
-                        If a number, it matches against `.spec.containers[].ports[].containerPort` of the Pods.
+                        targetPort defines the name or number of the target port of the `Pod` object behind the
+                        Service. The port must be specified with the container's port property.
                       x-kubernetes-int-or-string: true
                     tlsConfig:
                       description: tlsConfig defines TLS configuration used by the
@@ -65248,8 +64783,8 @@ apiVersion: apiextensions.k8s.io/v1
 kind: CustomResourceDefinition
 metadata:
   annotations:
-    controller-gen.kubebuilder.io/version: v0.21.0
-    operator.prometheus.io/version: 0.92.1
+    controller-gen.kubebuilder.io/version: v0.19.0
+    operator.prometheus.io/version: 0.89.0
   name: thanosrulers.monitoring.coreos.com
 spec:
   group: monitoring.coreos.com
@@ -66364,19 +65899,13 @@ spec:
                 type: array
               containers:
                 description: |-
-                  containers allows injecting additional containers or modifying operator
-                  generated containers. This can be used to allow adding an authentication
-                  proxy to the Pods or to change the behavior of an operator generated
-                  container. Containers described here modify an operator generated
-                  container if they share the same name and modifications are done via a
-                  strategic merge patch.
-
-                  The names of containers managed by the operator are:
-                  * `thanos-ruler`
-                  * `config-reloader`
-
-                  Overriding containers which are managed by the operator require careful
-                  testing, especially when upgrading to a new version of the operator.
+                  containers allows injecting additional containers or modifying operator generated
+                  containers. This can be used to allow adding an authentication proxy to a ThanosRuler pod or
+                  to change the behavior of an operator generated container. Containers described here modify
+                  an operator generated container if they share the same name and modifications are done via a
+                  strategic merge patch. The current container names are: `thanos-ruler` and `config-reloader`.
+                  Overriding containers is entirely outside the scope of what the maintainers will support and by doing
+                  so, you accept that this behaviour may break at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -67244,9 +66773,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -67475,6 +67002,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -68034,8 +67562,8 @@ spec:
                 description: |-
                   grpcServerTlsConfig defines the gRPC server from which Thanos Querier reads
                   recorded rule data.
-
-                  Note: Currently only the `minVersion`, `caFile`, `certFile`, `keyFile`, `cipherSuites` and `curves` fields are supported.
+                  Note: Currently only the CAFile, CertFile, and KeyFile fields are supported.
+                  Maps to the '--grpc-server-tls-*' CLI args.
                 properties:
                   ca:
                     description: ca defines the Certificate authority used when verifying
@@ -68153,38 +67681,6 @@ spec:
                     description: certFile defines the path to the client cert file
                       in the Prometheus container for the targets.
                     type: string
-                  cipherSuites:
-                    description: |-
-                      cipherSuites defines the list of supported cipher suites for TLS
-                      versions up to TLS 1.2.
-
-                      If not defined, the Go default cipher suites are used.
-                      Available cipher suites are documented in the Go documentation:
-                      https://golang.org/pkg/crypto/tls/#pkg-constants
-
-                      It requires Thanos >= v0.42.0. Note that the operator doesn't verify if
-                      the Thanos version supports the provided values.
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                    x-kubernetes-list-type: set
-                  curves:
-                    description: |-
-                      curves defines the list of preferred elliptic curves for
-                      TLS handshakes.
-
-                      If not defined, the Go default curves are used.
-                      Available curves are documented in the Go documentation:
-                      https://golang.org/pkg/crypto/tls/#CurveID
-
-                      It requires Thanos >= v0.42.0. Note that the operator doesn't verify if
-                      the Thanos version supports the provided values.
-                    items:
-                      type: string
-                    minItems: 1
-                    type: array
-                    x-kubernetes-list-type: set
                   insecureSkipVerify:
                     description: insecureSkipVerify defines how to disable target
                       certificate validation.
@@ -68314,11 +67810,13 @@ spec:
                 type: array
               initContainers:
                 description: |-
-                  initContainers allows injecting initContainers to the Pod definition.
-                  Those can be used to e.g. fetch secrets for injection into the
-                  configuration from external sources. Any errors during the execution of
-                  an initContainer will lead to a restart of the Pod. More info:
-                  https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+                  initContainers allows adding initContainers to the pod definition. Those can be used to e.g.
+                  fetch secrets for injection into the ThanosRuler configuration from external sources. Any
+                  errors during the execution of an initContainer will lead to a restart of the Pod.
+                  More info: https://kubernetes.io/docs/concepts/workloads/pods/init-containers/
+                  Using initContainers for any use case other then secret fetching is entirely outside the scope
+                  of what the maintainers will support and by doing so, you accept that this behaviour may break
+                  at any time without notice.
                 items:
                   description: A single application container that you want to run
                     within a pod.
@@ -69186,9 +68684,7 @@ spec:
                           type: integer
                       type: object
                     resizePolicy:
-                      description: |-
-                        Resources resize policy for the container.
-                        This field cannot be set on ephemeral containers.
+                      description: Resources resize policy for the container.
                       items:
                         description: ContainerResizePolicy represents resource resize
                           policy for the container.
@@ -69417,6 +68913,7 @@ spec:
                             procMount denotes the type of proc mount to use for the containers.
                             The default value is Default which uses the container runtime defaults for
                             readonly paths and masked paths.
+                            This requires the ProcMountType feature flag to be enabled.
                             Note that this field cannot be set when spec.os.name is windows.
                           type: string
                         readOnlyRootFilesystem:
@@ -70712,7 +70209,7 @@ spec:
                         tokenUrl:
                           description: tokenUrl defines the URL to fetch the token
                             from.
-                          pattern: ^(http|https)://.+$
+                          minLength: 1
                           type: string
                       required:
                       - clientId
@@ -70883,12 +70380,6 @@ spec:
                           - key
                           type: object
                           x-kubernetes-map-type: atomic
-                        externalId:
-                          description: |-
-                            externalId defines the external ID used when assuming an AWS role. Can only be used with roleArn.
-                            It requires Prometheus >= v3.11.0 or Alertmanager >= v0.33.0. Currently not supported by Thanos.
-                          minLength: 1
-                          type: string
                         profile:
                           description: profile defines the named AWS profile used
                             to authenticate.
@@ -70933,9 +70424,6 @@ spec:
                             It requires Prometheus >= v2.54.0.
                           type: boolean
                       type: object
-                      x-kubernetes-validations:
-                      - message: externalId can only be used when roleArn is specified
-                        rule: '!has(self.externalId) || has(self.roleArn)'
                     tlsConfig:
                       description: tlsConfig to use for the URL.
                       properties:
@@ -71116,11 +70604,9 @@ spec:
                           type: string
                       type: object
                     url:
-                      description: |-
-                        url defines the URL of the endpoint to send samples to.
-
-                        It must use the HTTP or HTTPS scheme.
-                      pattern: ^(http|https)://.+$
+                      description: url defines the URL of the endpoint to send samples
+                        to.
+                      minLength: 1
                       type: string
                     writeRelabelConfigs:
                       description: writeRelabelConfigs defines the list of remote
@@ -71423,11 +70909,6 @@ spec:
                     type: object
                 type: object
                 x-kubernetes-map-type: atomic
-              schedulerName:
-                description: schedulerName defines the scheduler to use for Pod scheduling.
-                  If not specified, the default scheduler is used.
-                minLength: 1
-                type: string
               securityContext:
                 description: |-
                   securityContext defines the pod-level security attributes and common container settings.
@@ -71846,7 +71327,7 @@ spec:
                               resources:
                                 description: |-
                                   resources represents the minimum resources the volume should have.
-                                  Users are allowed to specify resource requirements
+                                  If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                   that are lower than previous value but must still be higher than capacity recorded in the
                                   status field of the claim.
                                   More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -72101,7 +71582,7 @@ spec:
                           resources:
                             description: |-
                               resources represents the minimum resources the volume should have.
-                              Users are allowed to specify resource requirements
+                              If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                               that are lower than previous value but must still be higher than capacity recorded in the
                               status field of the claim.
                               More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -72257,7 +71738,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                             x-kubernetes-map-type: granular
                           allocatedResources:
@@ -72289,7 +71772,9 @@ spec:
                               ignore the update for the purpose it was designed. For
                               example - a controller that\nonly is responsible for
                               resizing capacity of the volume, should ignore PVC updates
-                              that change other valid\nresources associated with PVC."
+                              that change other valid\nresources associated with PVC.\n\nThis
+                              is an alpha field and requires enabling RecoverVolumeExpansionFailure
+                              feature."
                             type: object
                           capacity:
                             additionalProperties:
@@ -72416,10 +71901,9 @@ spec:
                     operator:
                       description: |-
                         Operator represents a key's relationship to the value.
-                        Valid operators are Exists, Equal, Lt, and Gt. Defaults to Equal.
+                        Valid operators are Exists and Equal. Defaults to Equal.
                         Exists is equivalent to wildcard for value, so that a pod can
                         tolerate all taints of a particular category.
-                        Lt and Gt perform numeric comparisons (requires feature gate TaintTolerationComparisonOperators).
                       type: string
                     tolerationSeconds:
                       description: |-
@@ -73356,7 +72840,7 @@ spec:
                                 resources:
                                   description: |-
                                     resources represents the minimum resources the volume should have.
-                                    Users are allowed to specify resource requirements
+                                    If RecoverVolumeExpansionFailure feature is enabled users are allowed to specify resource requirements
                                     that are lower than previous value but must still be higher than capacity recorded in the
                                     status field of the claim.
                                     More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#resources
@@ -73688,7 +73172,7 @@ spec:
                         A failure to resolve or pull the image during pod startup will block containers from starting and may add significant latency. Failures will be retried using normal volume backoff and will be reported on the pod reason and message.
                         The types of objects that may be mounted by this volume are defined by the container runtime implementation on a host machine and at minimum must include all valid types supported by the container image field.
                         The OCI object gets mounted in a single directory (spec.containers[*].volumeMounts.mountPath) by merging the manifest layers in the same way as for container images.
-                        The volume will be mounted read-only (ro).
+                        The volume will be mounted read-only (ro) and non-executable files (noexec).
                         Sub path mounts for containers are not supported (spec.containers[*].volumeMounts.subpath) before 1.33.
                         The field spec.securityContext.fsGroupChangePolicy has no effect on this volume type.
                       properties:
@@ -73860,7 +73344,8 @@ spec:
                       description: |-
                         portworxVolume represents a portworx volume attached and mounted on kubelets host machine.
                         Deprecated: PortworxVolume is deprecated. All operations for the in-tree portworxVolume type
-                        are redirected to the pxd.portworx.com CSI driver.
+                        are redirected to the pxd.portworx.com CSI driver when the CSIMigrationPortworx feature-gate
+                        is on.
                       properties:
                         fsType:
                           description: |-
@@ -74234,24 +73719,6 @@ spec:
                                     description: Kubelet's generated CSRs will be
                                       addressed to this signer.
                                     type: string
-                                  userAnnotations:
-                                    additionalProperties:
-                                      type: string
-                                    description: |-
-                                      userAnnotations allow pod authors to pass additional information to
-                                      the signer implementation.  Kubernetes does not restrict or validate this
-                                      metadata in any way.
-
-                                      These values are copied verbatim into the `spec.unverifiedUserAnnotations` field of
-                                      the PodCertificateRequest objects that Kubelet creates.
-
-                                      Entries are subject to the same validation as object metadata annotations,
-                                      with the addition that all keys must be domain-prefixed. No restrictions
-                                      are placed on values, except an overall size limitation on the entire field.
-
-                                      Signers should document the keys and values they support. Signers should
-                                      deny requests that contain keys they do not recognize.
-                                    type: object
                                 required:
                                 - keyType
                                 - signerName
@@ -75041,7 +74508,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.92.1
+    app.kubernetes.io/version: 0.89.0
   name: prometheus-operator
 roleRef:
   apiGroup: rbac.authorization.k8s.io
@@ -75058,7 +74525,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.92.1
+    app.kubernetes.io/version: 0.89.0
   name: prometheus-operator
 rules:
 - apiGroups:
@@ -75171,7 +74638,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.92.1
+    app.kubernetes.io/version: 0.89.0
   name: prometheus-operator
   namespace: default
 spec:
@@ -75187,13 +74654,13 @@ spec:
       labels:
         app.kubernetes.io/component: controller
         app.kubernetes.io/name: prometheus-operator
-        app.kubernetes.io/version: 0.92.1
+        app.kubernetes.io/version: 0.89.0
     spec:
       automountServiceAccountToken: true
       containers:
       - args:
         - --kubelet-service=kube-system/kubelet
-        - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.92.1
+        - --prometheus-config-reloader=quay.io/prometheus-operator/prometheus-config-reloader:v0.89.0
         - --watch-referenced-objects-in-all-namespaces=true
         - --disable-unmanaged-prometheus-configuration=true
         - --kubelet-endpoints=true
@@ -75201,7 +74668,7 @@ spec:
         env:
         - name: GOGC
           value: "30"
-        image: quay.io/prometheus-operator/prometheus-operator:v0.92.1
+        image: quay.io/prometheus-operator/prometheus-operator:v0.89.0
         name: prometheus-operator
         ports:
         - containerPort: 8080
@@ -75235,7 +74702,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.92.1
+    app.kubernetes.io/version: 0.89.0
   name: prometheus-operator
   namespace: default
 ---
@@ -75245,7 +74712,7 @@ metadata:
   labels:
     app.kubernetes.io/component: controller
     app.kubernetes.io/name: prometheus-operator
-    app.kubernetes.io/version: 0.92.1
+    app.kubernetes.io/version: 0.89.0
   name: prometheus-operator
   namespace: default
 spec:

@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,7 +23,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/labels"
@@ -57,19 +57,14 @@ type Config struct {
 	LocalHost string
 
 	// Label and field selectors for resource watchers.
-	PromSelector                    LabelSelector
-	AlertmanagerSelector            LabelSelector
-	ThanosRulerSelector             LabelSelector
-	SecretListWatchFieldSelector    FieldSelector
-	SecretListWatchLabelSelector    LabelSelector
-	ConfigMapListWatchFieldSelector FieldSelector
-	ConfigMapListWatchLabelSelector LabelSelector
+	PromSelector                 LabelSelector
+	AlertmanagerSelector         LabelSelector
+	ThanosRulerSelector          LabelSelector
+	SecretListWatchFieldSelector FieldSelector
+	SecretListWatchLabelSelector LabelSelector
 
 	// Controller id for pod ownership.
 	ControllerID string
-
-	// Repair policy
-	RepairPolicy RepairPolicy
 
 	// Event recorder factory.
 	EventRecorderFactory EventRecorderFactory
@@ -104,22 +99,17 @@ func DefaultConfig(cpu, memory string) Config {
 			},
 			PrometheusTopologyShardingFeature: FeatureGate{
 				description: "Enables the zone aware sharding for Prometheus",
-				enabled:     true,
+				enabled:     false,
 			},
 			PrometheusShardRetentionPolicyFeature: FeatureGate{
 				description: "Enables shard retention policy for Prometheus",
-				enabled:     true,
+				enabled:     false,
 			},
 			StatusForConfigurationResourcesFeature: FeatureGate{
 				description: "Updates the status subresource for configuration resources",
 				enabled:     false,
 			},
-			RemoteWriteCustomResourceDefinitionFeature: FeatureGate{
-				description: "Enables the RemoteWrite CRD support",
-				enabled:     false,
-			},
 		},
-		RepairPolicy: NoneRepairPolicy,
 	}
 }
 
@@ -146,23 +136,23 @@ type ContainerConfig struct {
 	EnableProbes   bool
 }
 
-func (cc ContainerConfig) ResourceRequirements() corev1.ResourceRequirements {
-	resources := corev1.ResourceRequirements{
-		Limits:   corev1.ResourceList{},
-		Requests: corev1.ResourceList{},
+func (cc ContainerConfig) ResourceRequirements() v1.ResourceRequirements {
+	resources := v1.ResourceRequirements{
+		Limits:   v1.ResourceList{},
+		Requests: v1.ResourceList{},
 	}
 
 	if cc.CPURequests.String() != "0" {
-		resources.Requests[corev1.ResourceCPU] = cc.CPURequests.q
+		resources.Requests[v1.ResourceCPU] = cc.CPURequests.q
 	}
 	if cc.CPULimits.String() != "0" {
-		resources.Limits[corev1.ResourceCPU] = cc.CPULimits.q
+		resources.Limits[v1.ResourceCPU] = cc.CPULimits.q
 	}
 	if cc.MemoryRequests.String() != "0" {
-		resources.Requests[corev1.ResourceMemory] = cc.MemoryRequests.q
+		resources.Requests[v1.ResourceMemory] = cc.MemoryRequests.q
 	}
 	if cc.MemoryLimits.String() != "0" {
-		resources.Limits[corev1.ResourceMemory] = cc.MemoryLimits.q
+		resources.Limits[v1.ResourceMemory] = cc.MemoryLimits.q
 	}
 
 	return resources
@@ -237,11 +227,8 @@ func (m *Map) Set(value string) error {
 	}
 
 	for pair := range strings.SplitSeq(value, ",") {
-		k, v, ok := strings.Cut(pair, "=")
-		if !ok {
-			return fmt.Errorf("invalid key=value pair: %q", pair)
-		}
-		(*m)[k] = v
+		pair := strings.Split(pair, "=")
+		(*m)[pair[0]] = pair[1]
 	}
 
 	return nil
@@ -293,7 +280,7 @@ func (n *Namespaces) Finalize() error {
 	}
 
 	if len(n.AllowList) == 0 {
-		n.AllowList = StringSet{corev1.NamespaceAll: struct{}{}}
+		n.AllowList = StringSet{v1.NamespaceAll: struct{}{}}
 	}
 
 	if len(n.PrometheusAllowList) == 0 {
@@ -397,7 +384,7 @@ func (s StringSet) isAllNamespace() bool {
 		return false
 	}
 
-	_, found := s[corev1.NamespaceAll]
+	_, found := s[v1.NamespaceAll]
 	return found
 }
 

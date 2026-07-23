@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2017 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -25,7 +25,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	authv1 "k8s.io/api/authorization/v1"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apiextensionsv1 "k8s.io/apiextensions-apiserver/pkg/apis/apiextensions/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -57,9 +57,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				},
 				Spec: monitoringv1.AlertmanagerSpec{
 					Version: "v0.0.1",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("200Mi"),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceMemory: resource.MustParse("200Mi"),
 						},
 					},
 				},
@@ -70,9 +70,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				},
 				Spec: monitoringv1.AlertmanagerSpec{
 					Version: "v0.0.1",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("100Mi"),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceMemory: resource.MustParse("100Mi"),
 						},
 					},
 				},
@@ -88,9 +88,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 			a: monitoringv1.Alertmanager{
 				Spec: monitoringv1.AlertmanagerSpec{
 					Version: "v0.0.1",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("200Mi"),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceMemory: resource.MustParse("200Mi"),
 						},
 					},
 				},
@@ -98,9 +98,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 			b: monitoringv1.Alertmanager{
 				Spec: monitoringv1.AlertmanagerSpec{
 					Version: "v0.0.1",
-					Resources: corev1.ResourceRequirements{
-						Requests: corev1.ResourceList{
-							corev1.ResourceMemory: resource.MustParse("100Mi"),
+					Resources: v1.ResourceRequirements{
+						Requests: v1.ResourceList{
+							v1.ResourceMemory: resource.MustParse("100Mi"),
 						},
 					},
 				},
@@ -181,7 +181,7 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 
 			require.Equal(t, a1Hash, a2Hash, "expected two Alertmanager CRDs to produce the same hash but got different hash")
 
-			a2Hash, err = createSSetInputHash(tc.a, Config{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{Replicas: new(int32(2))})
+			a2Hash, err = createSSetInputHash(tc.a, Config{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{Replicas: ptr.To(int32(2))})
 			require.NoError(t, err)
 
 			require.NotEqual(t, a1Hash, a2Hash, "expected same Alertmanager CRDs with different statefulset specs to produce different hashes but got equal hash")
@@ -195,29 +195,11 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 // after selecting AlertmanagerConfig resources and before generating the
 // Alertmanager configuration.
 func TestCheckAlertmanagerConfig(t *testing.T) {
-	defaultVersion, err := semver.ParseTolerant(operator.DefaultAlertmanagerVersion)
+	version, err := semver.ParseTolerant(operator.DefaultAlertmanagerVersion)
 	require.NoError(t, err)
 
-	version25, err := semver.ParseTolerant("v0.25.0")
-	require.NoError(t, err)
-
-	version26, err := semver.ParseTolerant("v0.26.0")
-	require.NoError(t, err)
-
-	version29, err := semver.ParseTolerant("v0.29.0")
-	require.NoError(t, err)
-
-	version30, err := semver.ParseTolerant("v0.30.0")
-	require.NoError(t, err)
-
-	version31, err := semver.ParseTolerant("v0.31.0")
-	require.NoError(t, err)
-
-	version32, err := semver.ParseTolerant("v0.31.0")
-	require.NoError(t, err)
-
-	c := fake.NewClientset(
-		&corev1.Secret{
+	c := fake.NewSimpleClientset(
+		&v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "secret",
 				Namespace: "ns1",
@@ -227,14 +209,12 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 				"template-url":         []byte("{{ .labels.url }}"),
 				"invalid-url":          []byte("://foo"),
 				"invalid-template-url": []byte("{{ .labels.url"),
-				"token":                []byte("abc1243"),
 			},
 		},
 	)
 
 	for _, tc := range []struct {
 		amConfig *monitoringv1alpha1.AlertmanagerConfig
-		version  *semver.Version
 		ok       bool
 	}{
 		{
@@ -379,8 +359,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 					Receivers: []monitoringv1alpha1.Receiver{{
 						Name: "recv1",
 						PagerDutyConfigs: []monitoringv1alpha1.PagerDutyConfig{{
-							ServiceKey: &corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+							ServiceKey: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 								Key:                  "not-existing",
 							},
 						}},
@@ -402,8 +382,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 					Receivers: []monitoringv1alpha1.Receiver{{
 						Name: "recv1",
 						PagerDutyConfigs: []monitoringv1alpha1.PagerDutyConfig{{
-							ServiceKey: &corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+							ServiceKey: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 								Key:                  "key1",
 							},
 						}},
@@ -425,8 +405,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 					Receivers: []monitoringv1alpha1.Receiver{{
 						Name: "recv1",
 						PagerDutyConfigs: []monitoringv1alpha1.PagerDutyConfig{{
-							RoutingKey: &corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+							RoutingKey: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 								Key:                  "not-existing",
 							},
 						}},
@@ -448,8 +428,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 					Receivers: []monitoringv1alpha1.Receiver{{
 						Name: "recv1",
 						PagerDutyConfigs: []monitoringv1alpha1.PagerDutyConfig{{
-							RoutingKey: &corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+							RoutingKey: &v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 								Key:                  "key1",
 							},
 						}},
@@ -492,7 +472,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URL: new("http://test.example.com"),
+								URL: ptr.To("http://test.example.com"),
 							},
 						},
 					}},
@@ -514,7 +494,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URL: new("http:test.example.com"),
+								URL: ptr.To("http:test.example.com"),
 							},
 						},
 					}},
@@ -536,7 +516,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URL: new("{{ .labels.url }}"),
+								URL: ptr.To("{{ .labels.url }}"),
 							},
 						},
 					}},
@@ -558,7 +538,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URL: new("{{ .labels.value "),
+								URL: ptr.To("{{ .labels.value "),
 							},
 						},
 					}},
@@ -580,8 +560,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								URLSecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "key1",
 								},
 							},
@@ -605,8 +585,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								URLSecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "template-url",
 								},
 							},
@@ -630,8 +610,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								URLSecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "not-existing",
 								},
 							},
@@ -655,8 +635,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
 							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								URLSecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "invalid-template-url",
 								},
 							},
@@ -665,60 +645,6 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 				},
 			},
 			ok: false,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "webhook-with-payload-unsupported-version",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
-							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
-									Key:                  "key1",
-								},
-								Payload: new(`{"foo":"bar}`),
-							},
-						},
-					}},
-				},
-			},
-			version: &version31,
-			ok:      false,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "webhook-with-payload",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						WebhookConfigs: []monitoringv1alpha1.WebhookConfig{
-							{
-								URLSecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
-									Key:                  "key1",
-								},
-								Payload: new(`{"foo":"bar}`),
-							},
-						},
-					}},
-				},
-			},
-			version: &version32,
-			ok:      false,
 		},
 		{
 			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
@@ -734,7 +660,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WeChatConfigs: []monitoringv1alpha1.WeChatConfig{
 							{
-								CorpID: new("testingCorpID"),
+								CorpID: ptr.To("testingCorpID"),
 							},
 						},
 					}},
@@ -756,7 +682,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WeChatConfigs: []monitoringv1alpha1.WeChatConfig{
 							{
-								CorpID: new("testingCorpID"),
+								CorpID: ptr.To("testingCorpID"),
 								APIURL: ptr.To(monitoringv1alpha1.URL("http://::invalid-url")),
 							},
 						},
@@ -779,9 +705,9 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WeChatConfigs: []monitoringv1alpha1.WeChatConfig{
 							{
-								CorpID: new("testingCorpID"),
-								APISecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								CorpID: ptr.To("testingCorpID"),
+								APISecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "not-existing",
 								},
 							},
@@ -805,9 +731,9 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						WeChatConfigs: []monitoringv1alpha1.WeChatConfig{
 							{
-								CorpID: new("testingCorpID"),
-								APISecret: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								CorpID: ptr.To("testingCorpID"),
+								APISecret: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "key1",
 								},
 							},
@@ -963,7 +889,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 									{
 										Type: "type",
 										Text: "text",
-										Name: new("my-action"),
+										Name: ptr.To("my-action"),
 									},
 								},
 							},
@@ -991,7 +917,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 									{
 										Type: "type",
 										Text: "text",
-										Name: new("my-action"),
+										Name: ptr.To("my-action"),
 										ConfirmField: &monitoringv1alpha1.SlackConfirmationField{
 											Text: "",
 										},
@@ -1022,7 +948,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 									{
 										Type: "type",
 										Text: "text",
-										Name: new("my-action"),
+										Name: ptr.To("my-action"),
 										ConfirmField: &monitoringv1alpha1.SlackConfirmationField{
 											Text: "text",
 										},
@@ -1132,7 +1058,7 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 									{
 										Type: "type",
 										Text: "text",
-										Name: new("my-action"),
+										Name: ptr.To("my-action"),
 										ConfirmField: &monitoringv1alpha1.SlackConfirmationField{
 											Text: "text",
 										},
@@ -1144,28 +1070,6 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 										Value: "value",
 									},
 								},
-							},
-						},
-					}},
-				},
-			},
-			ok: true,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "slack-with-message-text",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						SlackConfigs: []monitoringv1alpha1.SlackConfig{
-							{
-								MessageText: new("test message text"),
 							},
 						},
 					}},
@@ -1207,8 +1111,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						SlackConfigs: []monitoringv1alpha1.SlackConfig{
 							{
-								APIURL: &corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								APIURL: &v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "invalid-url",
 								},
 							},
@@ -1320,8 +1224,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						DiscordConfigs: []monitoringv1alpha1.DiscordConfig{
 							{
-								APIURL: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								APIURL: v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "invalid-url",
 								},
 							},
@@ -1342,12 +1246,12 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						SNSConfigs: []monitoringv1alpha1.SNSConfig{
 							{
-								ApiURL: new("https:://sns.us-east-2.amazonaws.com"),
+								ApiURL: ptr.To("https:://sns.us-east-2.amazonaws.com"),
 								Sigv4: &monitoringv1.Sigv4{
 									Region:  "us-east-2",
 									RoleArn: "test-roleARN",
 								},
-								TopicARN: new("test-topicARN"),
+								TopicARN: ptr.To("test-topicARN"),
 							},
 						},
 					}},
@@ -1369,8 +1273,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
 							{
-								WebhookURL: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "not-existing-secret"},
+								WebhookURL: v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "not-existing-secret"},
 									Key:                  "url",
 								},
 							},
@@ -1394,8 +1298,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
 							{
-								WebhookURL: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								WebhookURL: v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "not-existing",
 								},
 							},
@@ -1419,8 +1323,8 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 						Name: "recv1",
 						MSTeamsConfigs: []monitoringv1alpha1.MSTeamsConfig{
 							{
-								WebhookURL: corev1.SecretKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{Name: "secret"},
+								WebhookURL: v1.SecretKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{Name: "secret"},
 									Key:                  "key1",
 								},
 							},
@@ -1430,175 +1334,11 @@ func TestCheckAlertmanagerConfig(t *testing.T) {
 			},
 			ok: true,
 		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "email-config-with-implicit-tls",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						EmailConfigs: []monitoringv1alpha1.EmailConfig{
-							{
-								Smarthost:        new("example.com:587"),
-								From:             new("admin@example.com"),
-								To:               new("customers@example.com"),
-								ForceImplicitTLS: new(true),
-							},
-						},
-					}},
-				},
-			},
-			version: &version31,
-			ok:      true,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "email-config-with-implicit-tls",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						EmailConfigs: []monitoringv1alpha1.EmailConfig{
-							{
-								Smarthost:        new("example.com:587"),
-								From:             new("admin@example.com"),
-								To:               new("customers@example.com"),
-								ForceImplicitTLS: new(true),
-							},
-						},
-					}},
-				},
-			},
-			version: &version30,
-			ok:      false,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "telegram-with-bottoken",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						TelegramConfigs: []monitoringv1alpha1.TelegramConfig{
-							{
-								BotToken: &corev1.SecretKeySelector{
-									Key: "token",
-									LocalObjectReference: corev1.LocalObjectReference{
-										Name: "secret",
-									},
-								},
-								BotTokenFile: new("/bot/token/file"),
-							},
-						},
-					}},
-				},
-			},
-			version: &version26,
-			ok:      false,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "telegram-with-unsupported-bottokenfile",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						TelegramConfigs: []monitoringv1alpha1.TelegramConfig{
-							{
-								BotTokenFile: new("/bot/token/file"),
-							},
-						},
-					}},
-				},
-			},
-			version: &version25,
-			ok:      false,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "email-config-with-threading",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						EmailConfigs: []monitoringv1alpha1.EmailConfig{
-							{
-								Smarthost: new("example.com:587"),
-								From:      new("admin@example.com"),
-								To:        new("customers@example.com"),
-								Threading: &monitoringv1alpha1.EmailThreadingConfig{
-									ThreadByDate: monitoringv1alpha1.ThreadByDateTypeDaily,
-								},
-							},
-						},
-					}},
-				},
-			},
-			version: &version30,
-			ok:      true,
-		},
-		{
-			amConfig: &monitoringv1alpha1.AlertmanagerConfig{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "email-config-with-threading",
-					Namespace: "ns1",
-				},
-				Spec: monitoringv1alpha1.AlertmanagerConfigSpec{
-					Route: &monitoringv1alpha1.Route{
-						Receiver: "recv1",
-					},
-					Receivers: []monitoringv1alpha1.Receiver{{
-						Name: "recv1",
-						EmailConfigs: []monitoringv1alpha1.EmailConfig{
-							{
-								Smarthost: new("example.com:587"),
-								From:      new("admin@example.com"),
-								To:        new("customers@example.com"),
-								Threading: &monitoringv1alpha1.EmailThreadingConfig{
-									ThreadByDate: monitoringv1alpha1.ThreadByDateTypeDaily,
-								},
-							},
-						},
-					}},
-				},
-			},
-			version: &version29,
-			ok:      false,
-		},
 	} {
 		t.Run(tc.amConfig.Name, func(t *testing.T) {
 			store := assets.NewStoreBuilder(c.CoreV1(), c.CoreV1())
 
-			amVersion := defaultVersion
-			if tc.version != nil {
-				amVersion = *tc.version
-			}
-			err := checkAlertmanagerConfigResource(context.Background(), tc.amConfig, amVersion, store)
+			err := checkAlertmanagerConfigResource(context.Background(), tc.amConfig, version, store)
 			if tc.ok {
 				require.NoError(t, err)
 				return
@@ -1655,7 +1395,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1681,7 +1421,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1704,7 +1444,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1728,7 +1468,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1751,7 +1491,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1777,7 +1517,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1802,7 +1542,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1827,7 +1567,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				},
 			},
 			objects: []runtime.Object{
-				&corev1.Secret{
+				&v1.Secret{
 					ObjectMeta: metav1.ObjectMeta{
 						Name:      "amconfig",
 						Namespace: "test",
@@ -1842,11 +1582,11 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 		},
 	} {
 		t.Run(tc.am.Name, func(t *testing.T) {
-			c := fake.NewClientset(tc.objects...)
+			c := fake.NewSimpleClientset(tc.objects...)
 
 			o := &Operator{
 				kclient:          c,
-				mclient:          monitoringfake.NewClientset(),
+				mclient:          monitoringfake.NewSimpleClientset(),
 				ssarClient:       &alwaysAllowed{},
 				logger:           slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo})),
 				metrics:          operator.NewMetrics(prometheus.NewRegistry()),
@@ -1858,7 +1598,7 @@ func TestProvisionAlertmanagerConfiguration(t *testing.T) {
 				operator.Config{
 					Namespaces: operator.Namespaces{
 						AlertmanagerConfigAllowList: map[string]struct{}{
-							corev1.NamespaceAll: {},
+							v1.NamespaceAll: {},
 						},
 						AlertmanagerAllowList: map[string]struct{}{
 							"foo": {},

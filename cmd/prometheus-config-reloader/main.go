@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2016 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -146,6 +146,7 @@ func main() {
 	}
 
 	logger.Info("Starting prometheus-config-reloader", "version", version.Info(), "build_context", version.BuildContext())
+	goruntime.SetMaxProcs(logger)
 	goruntime.SetMemLimit(logger, *memlimitRatio)
 
 	r := metrics.NewRegistry("prometheus_config_reloader")

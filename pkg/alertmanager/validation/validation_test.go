@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2021 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"testing"
 
-	"github.com/prometheus/alertmanager/config/common"
+	"github.com/prometheus/alertmanager/config"
 	"github.com/stretchr/testify/require"
 )
 
@@ -27,34 +27,24 @@ func TestValidateUrl(t *testing.T) {
 		name         string
 		in           string
 		expectErr    bool
-		expectResult func() *common.URL
+		expectResult func() *config.URL
 	}{
 		{
-			name:      "invalid url",
-			in:        "https://!^example.com",
+			name:      "Test invalid url returns error",
+			in:        "https://!^invalid.com",
 			expectErr: true,
 		},
 		{
-			name:      "missing host",
-			in:        "http://",
+			name:      "Test missing scheme returns error",
+			in:        "is.normally.valid",
 			expectErr: true,
 		},
 		{
-			name:      "missing scheme",
-			in:        "example.com",
-			expectErr: true,
-		},
-		{
-			name:      "invalid scheme",
-			in:        "tcp://example.com",
-			expectErr: true,
-		},
-		{
-			name: "valid URL",
-			in:   "https://u:p@example.com",
-			expectResult: func() *common.URL {
-				u, _ := url.Parse("https://u:p@example.com")
-				return &common.URL{URL: u}
+			name: "Test happy path",
+			in:   "https://u:p@is.compliant.with.upstream.unmarshal",
+			expectResult: func() *config.URL {
+				u, _ := url.Parse("https://u:p@is.compliant.with.upstream.unmarshal")
+				return &config.URL{URL: u}
 			},
 		},
 	}
@@ -69,7 +59,7 @@ func TestValidateUrl(t *testing.T) {
 			require.NoError(t, err)
 
 			res := tc.expectResult()
-			require.Equal(t, u.String(), res.String())
+			require.Equal(t, u, res, "wanted %v but got %v", res, u)
 		})
 	}
 }
@@ -78,31 +68,21 @@ func TestValidateSecretUrl(t *testing.T) {
 		name         string
 		in           string
 		expectErr    bool
-		expectResult func() *common.URL
+		expectResult func() *config.URL
 	}{
 		{
-			name:      "invalid URL",
-			in:        "https://!^example.com",
+			name:      "Test invalid url returns error",
+			in:        "https://!^invalid.com",
 			expectErr: true,
 		},
 		{
-			name:      "missing host",
-			in:        "http://",
-			expectErr: true,
-		},
-		{
-			name:      "missing scheme",
-			in:        "example.com",
-			expectErr: true,
-		},
-		{
-			name:      "invalid scheme",
-			in:        "tcp://example.com",
+			name:      "Test missing scheme returns error",
+			in:        "is.normally.valid",
 			expectErr: true,
 		},
 		{
 			name: "Test happy path",
-			in:   "https://u:p@example.com",
+			in:   "https://u:p@is.compliant.with.upstream.unmarshal",
 		},
 	}
 
@@ -118,6 +98,7 @@ func TestValidateSecretUrl(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 		})
 	}
 }

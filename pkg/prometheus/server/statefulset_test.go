@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2016 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -180,8 +180,8 @@ func TestStatefulSetPVC(t *testing.T) {
 		EmbeddedObjectMetadata: monitoringv1.EmbeddedObjectMetadata{
 			Annotations: annotations,
 		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		Spec: v1.PersistentVolumeClaimSpec{
+			AccessModes:      []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
 			StorageClassName: &storageClass,
 		},
 	}
@@ -213,8 +213,8 @@ func TestStatefulSetEmptyDir(t *testing.T) {
 		"testannotation": "testannotationvalue",
 	}
 
-	emptyDir := corev1.EmptyDirVolumeSource{
-		Medium: corev1.StorageMediumMemory,
+	emptyDir := v1.EmptyDirVolumeSource{
+		Medium: v1.StorageMediumMemory,
 	}
 
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
@@ -247,10 +247,10 @@ func TestStatefulSetEphemeral(t *testing.T) {
 
 	storageClass := "storageclass"
 
-	ephemeral := corev1.EphemeralVolumeSource{
-		VolumeClaimTemplate: &corev1.PersistentVolumeClaimTemplate{
-			Spec: corev1.PersistentVolumeClaimSpec{
-				AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+	ephemeral := v1.EphemeralVolumeSource{
+		VolumeClaimTemplate: &v1.PersistentVolumeClaimTemplate{
+			Spec: v1.PersistentVolumeClaimSpec{
+				AccessModes:      []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
 				StorageClassName: &storageClass,
 			},
 		},
@@ -292,11 +292,11 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 
 	expected := &appsv1.StatefulSet{
 		Spec: appsv1.StatefulSetSpec{
-			Template: corev1.PodTemplateSpec{
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
+			Template: v1.PodTemplateSpec{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
 						{
-							VolumeMounts: []corev1.VolumeMount{
+							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "config-out",
 									ReadOnly:  true,
@@ -331,23 +331,23 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
+					Volumes: []v1.Volume{
 						{
 							Name: "config",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
+							VolumeSource: v1.VolumeSource{
+								Secret: &v1.SecretVolumeSource{
 									SecretName: prompkg.ConfigSecretName(&p),
 								},
 							},
 						},
 						{
 							Name: "tls-assets",
-							VolumeSource: corev1.VolumeSource{
-								Projected: &corev1.ProjectedVolumeSource{
-									Sources: []corev1.VolumeProjection{
+							VolumeSource: v1.VolumeSource{
+								Projected: &v1.ProjectedVolumeSource{
+									Sources: []v1.VolumeProjection{
 										{
-											Secret: &corev1.SecretProjection{
-												LocalObjectReference: corev1.LocalObjectReference{
+											Secret: &v1.SecretProjection{
+												LocalObjectReference: v1.LocalObjectReference{
 													Name: prompkg.TLSAssetsSecretName(&p) + "-0",
 												},
 											},
@@ -358,43 +358,43 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 						},
 						{
 							Name: "config-out",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{
-									Medium: corev1.StorageMediumMemory,
+							VolumeSource: v1.VolumeSource{
+								EmptyDir: &v1.EmptyDirVolumeSource{
+									Medium: v1.StorageMediumMemory,
 								},
 							},
 						},
 						{
 							Name: "secret-test-secret1",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
+							VolumeSource: v1.VolumeSource{
+								Secret: &v1.SecretVolumeSource{
 									SecretName: "test-secret1",
 								},
 							},
 						},
 						{
 							Name: "rules-configmap-one",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
+							VolumeSource: v1.VolumeSource{
+								ConfigMap: &v1.ConfigMapVolumeSource{
+									LocalObjectReference: v1.LocalObjectReference{
 										Name: "rules-configmap-one",
 									},
-									Optional: new(true),
+									Optional: ptr.To(true),
 								},
 							},
 						},
 						{
 							Name: "web-config",
-							VolumeSource: corev1.VolumeSource{
-								Secret: &corev1.SecretVolumeSource{
+							VolumeSource: v1.VolumeSource{
+								Secret: &v1.SecretVolumeSource{
 									SecretName: "prometheus-volume-init-test-web-config",
 								},
 							},
 						},
 						{
 							Name: "prometheus-volume-init-test-db",
-							VolumeSource: corev1.VolumeSource{
-								EmptyDir: &corev1.EmptyDirVolumeSource{},
+							VolumeSource: v1.VolumeSource{
+								EmptyDir: &v1.EmptyDirVolumeSource{},
 							},
 						},
 					},
@@ -411,8 +411,8 @@ func TestStatefulSetVolumeInitial(t *testing.T) {
 	shardedSecret, err := operator.ReconcileShardedSecret(
 		context.Background(),
 		map[string][]byte{},
-		fake.NewClientset(),
-		&corev1.Secret{
+		fake.NewSimpleClientset(),
+		&v1.Secret{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      prompkg.TLSAssetsSecretName(&p),
 				Namespace: "test",
@@ -482,9 +482,9 @@ func TestListenLocal(t *testing.T) {
 
 	require.True(t, found, "Prometheus not listening on loopback when it should.")
 
-	expectedProbeHandler := func(probePath string) corev1.ProbeHandler {
-		return corev1.ProbeHandler{
-			Exec: &corev1.ExecAction{
+	expectedProbeHandler := func(probePath string) v1.ProbeHandler {
+		return v1.ProbeHandler{
+			Exec: &v1.ExecAction{
 				Command: []string{
 					`sh`,
 					`-c`,
@@ -495,7 +495,7 @@ func TestListenLocal(t *testing.T) {
 	}
 
 	actualStartupProbe := sset.Spec.Template.Spec.Containers[0].StartupProbe
-	expectedStartupProbe := &corev1.Probe{
+	expectedStartupProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/ready"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    15,
@@ -504,7 +504,7 @@ func TestListenLocal(t *testing.T) {
 	require.Equal(t, expectedStartupProbe, actualStartupProbe, "Startup probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedStartupProbe, actualStartupProbe)
 
 	actualLivenessProbe := sset.Spec.Template.Spec.Containers[0].LivenessProbe
-	expectedLivenessProbe := &corev1.Probe{
+	expectedLivenessProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/healthy"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    5,
@@ -513,7 +513,7 @@ func TestListenLocal(t *testing.T) {
 	require.Equal(t, expectedLivenessProbe, actualLivenessProbe, "Liveness probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedLivenessProbe, actualLivenessProbe)
 
 	actualReadinessProbe := sset.Spec.Template.Spec.Containers[0].ReadinessProbe
-	expectedReadinessProbe := &corev1.Probe{
+	expectedReadinessProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/ready"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    5,
@@ -531,14 +531,14 @@ func TestListenTLS(t *testing.T) {
 				Web: &monitoringv1.PrometheusWebSpec{
 					WebConfigFileFields: monitoringv1.WebConfigFileFields{
 						TLSConfig: &monitoringv1.WebTLSConfig{
-							KeySecret: corev1.SecretKeySelector{
-								LocalObjectReference: corev1.LocalObjectReference{
+							KeySecret: v1.SecretKeySelector{
+								LocalObjectReference: v1.LocalObjectReference{
 									Name: "some-secret",
 								},
 							},
 							Cert: monitoringv1.SecretOrConfigMap{
-								ConfigMap: &corev1.ConfigMapKeySelector{
-									LocalObjectReference: corev1.LocalObjectReference{
+								ConfigMap: &v1.ConfigMapKeySelector{
+									LocalObjectReference: v1.LocalObjectReference{
 										Name: "some-configmap",
 									},
 								},
@@ -552,9 +552,9 @@ func TestListenTLS(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	expectedProbeHandler := func(probePath string) corev1.ProbeHandler {
-		return corev1.ProbeHandler{
-			HTTPGet: &corev1.HTTPGetAction{
+	expectedProbeHandler := func(probePath string) v1.ProbeHandler {
+		return v1.ProbeHandler{
+			HTTPGet: &v1.HTTPGetAction{
 				Path:   probePath,
 				Port:   intstr.FromString("web"),
 				Scheme: "HTTPS",
@@ -563,7 +563,7 @@ func TestListenTLS(t *testing.T) {
 	}
 
 	actualStartupProbe := sset.Spec.Template.Spec.Containers[0].StartupProbe
-	expectedStartupProbe := &corev1.Probe{
+	expectedStartupProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/ready"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    15,
@@ -572,7 +572,7 @@ func TestListenTLS(t *testing.T) {
 	require.Equal(t, expectedStartupProbe, actualStartupProbe, "Startup probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedStartupProbe, actualStartupProbe)
 
 	actualLivenessProbe := sset.Spec.Template.Spec.Containers[0].LivenessProbe
-	expectedLivenessProbe := &corev1.Probe{
+	expectedLivenessProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/healthy"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    5,
@@ -581,7 +581,7 @@ func TestListenTLS(t *testing.T) {
 	require.Equal(t, expectedLivenessProbe, actualLivenessProbe, "Liveness probe doesn't match expected. \n\nExpected: %+v\n\nGot: %+v", expectedLivenessProbe, actualLivenessProbe)
 
 	actualReadinessProbe := sset.Spec.Template.Spec.Containers[0].ReadinessProbe
-	expectedReadinessProbe := &corev1.Probe{
+	expectedReadinessProbe := &v1.Probe{
 		ProbeHandler:     expectedProbeHandler("/-/ready"),
 		TimeoutSeconds:   3,
 		PeriodSeconds:    5,
@@ -615,7 +615,6 @@ func TestListenTLS(t *testing.T) {
 		"--reload-url=https://localhost:9090/-/reload",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
-		"--watched-dir=/etc/prometheus/config",
 	}
 
 	for _, c := range sset.Spec.Template.Spec.Containers {
@@ -948,14 +947,14 @@ func TestThanosResourcesNotSet(t *testing.T) {
 }
 
 func TestThanosResourcesSet(t *testing.T) {
-	expected := corev1.ResourceRequirements{
-		Limits: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("125m"),
-			corev1.ResourceMemory: resource.MustParse("75Mi"),
+	expected := v1.ResourceRequirements{
+		Limits: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("125m"),
+			v1.ResourceMemory: resource.MustParse("75Mi"),
 		},
-		Requests: corev1.ResourceList{
-			corev1.ResourceCPU:    resource.MustParse("100m"),
-			corev1.ResourceMemory: resource.MustParse("50Mi"),
+		Requests: v1.ResourceList{
+			v1.ResourceCPU:    resource.MustParse("100m"),
+			v1.ResourceMemory: resource.MustParse("50Mi"),
 		},
 	}
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
@@ -997,7 +996,7 @@ func TestThanosObjectStorage(t *testing.T) {
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			Thanos: &monitoringv1.ThanosSpec{
-				ObjectStorageConfig: &corev1.SecretKeySelector{
+				ObjectStorageConfig: &v1.SecretKeySelector{
 					Key: testKey,
 				},
 				BlockDuration: "2h",
@@ -1124,7 +1123,7 @@ func TestThanosBlockDuration(t *testing.T) {
 		Spec: monitoringv1.PrometheusSpec{
 			Thanos: &monitoringv1.ThanosSpec{
 				BlockDuration: "1h",
-				ObjectStorageConfig: &corev1.SecretKeySelector{
+				ObjectStorageConfig: &v1.SecretKeySelector{
 					Key: testKey,
 				},
 			},
@@ -1149,8 +1148,8 @@ func TestThanosWithNamedPVC(t *testing.T) {
 		EmbeddedObjectMetadata: monitoringv1.EmbeddedObjectMetadata{
 			Name: testKey,
 		},
-		Spec: corev1.PersistentVolumeClaimSpec{
-			AccessModes:      []corev1.PersistentVolumeAccessMode{corev1.ReadWriteOnce},
+		Spec: v1.PersistentVolumeClaimSpec{
+			AccessModes:      []v1.PersistentVolumeAccessMode{v1.ReadWriteOnce},
 			StorageClassName: &storageClass,
 		},
 	}
@@ -1164,7 +1163,7 @@ func TestThanosWithNamedPVC(t *testing.T) {
 			},
 			Thanos: &monitoringv1.ThanosSpec{
 				BlockDuration: "1h",
-				ObjectStorageConfig: &corev1.SecretKeySelector{
+				ObjectStorageConfig: &v1.SecretKeySelector{
 					Key: testKey,
 				},
 			},
@@ -1191,7 +1190,7 @@ func TestThanosTracing(t *testing.T) {
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			Thanos: &monitoringv1.ThanosSpec{
-				TracingConfig: &corev1.SecretKeySelector{
+				TracingConfig: &v1.SecretKeySelector{
 					Key: testKey,
 				},
 			},
@@ -1225,17 +1224,17 @@ func TestThanosSideCarVolumes(t *testing.T) {
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				Volumes: []corev1.Volume{
+				Volumes: []v1.Volume{
 					{
 						Name: testVolume,
-						VolumeSource: corev1.VolumeSource{
-							EmptyDir: &corev1.EmptyDirVolumeSource{},
+						VolumeSource: v1.VolumeSource{
+							EmptyDir: &v1.EmptyDirVolumeSource{},
 						},
 					},
 				},
 			},
 			Thanos: &monitoringv1.ThanosSpec{
-				VolumeMounts: []corev1.VolumeMount{
+				VolumeMounts: []v1.VolumeMount{
 					{
 						Name:      testVolume,
 						MountPath: testVolumeMountPath,
@@ -1288,58 +1287,47 @@ func TestRetentionAndRetentionSize(t *testing.T) {
 		{"v2.7.0", "1d", "", "--storage.tsdb.retention.time=1d", "--storage.tsdb.retention.size=", true, false},
 		{"v2.7.0", "", "512MB", "--storage.tsdb.retention.time=24h", "--storage.tsdb.retention.size=512MB", false, true},
 		{"v2.7.0", "1d", "512MB", "--storage.tsdb.retention.time=1d", "--storage.tsdb.retention.size=512MB", true, true},
-		{"v3.10.0", "1d", "512MB", "--storage.tsdb.retention.time=1d", "--storage.tsdb.retention.size=512MB", true, true},
-		{"v3.11.0", "", "", "--storage.tsdb.retention.time=24h", "--storage.tsdb.retention.size=", false, false},
-		{"v3.11.0", "1d", "", "--storage.tsdb.retention.time=1d", "--storage.tsdb.retention.size=", false, false},
-		{"v3.11.0", "", "512MB", "--storage.tsdb.retention.time=24h", "--storage.tsdb.retention.size=512MB", false, false},
-		{"v3.11.0", "1d", "512MB", "--storage.tsdb.retention.time=1d", "--storage.tsdb.retention.size=512MB", false, false},
 	}
 
 	for _, test := range tests {
-		t.Run(fmt.Sprintf("%s retention=%q retentionSize=%q", test.version, test.specRetention, test.specRetentionSize), func(t *testing.T) {
-			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
-				Spec: monitoringv1.PrometheusSpec{
-					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-						Version: test.version,
-					},
-					Retention:     test.specRetention,
-					RetentionSize: test.specRetentionSize,
+		sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
+			Spec: monitoringv1.PrometheusSpec{
+				CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
+					Version: test.version,
 				},
-			})
-			require.NoError(t, err)
-
-			promArgs := sset.Spec.Template.Spec.Containers[0].Args
-			retentionFlag := strings.Split(test.expectedRetentionArg, "=")[0]
-			foundRetentionFlag := false
-			foundRetentionSizeFlag := false
-			foundRetention := false
-			foundRetentionSize := false
-			for _, flag := range promArgs {
-				if flag == test.expectedRetentionArg {
-					foundRetention = true
-				} else if flag == test.expectedRetentionSizeArg {
-					foundRetentionSize = true
-				}
-
-				if strings.HasPrefix(flag, retentionFlag) {
-					foundRetentionFlag = true
-				} else if strings.HasPrefix(flag, "--storage.tsdb.retention.size") {
-					foundRetentionSizeFlag = true
-				}
-			}
-
-			if test.shouldContainRetention {
-				require.True(t, (foundRetention && foundRetentionFlag))
-			} else {
-				require.False(t, foundRetentionFlag, "retention flag must not be set for Prometheus %s", test.version)
-			}
-
-			if test.shouldContainRetentionSize {
-				require.True(t, (foundRetentionSize && foundRetentionSizeFlag))
-			} else {
-				require.False(t, foundRetentionSizeFlag, "retention size flag must not be set for Prometheus %s", test.version)
-			}
+				Retention:     test.specRetention,
+				RetentionSize: test.specRetentionSize,
+			},
 		})
+		require.NoError(t, err)
+
+		promArgs := sset.Spec.Template.Spec.Containers[0].Args
+		retentionFlag := strings.Split(test.expectedRetentionArg, "=")[0]
+		foundRetentionFlag := false
+		foundRetentionSizeFlag := false
+		foundRetention := false
+		foundRetentionSize := false
+		for _, flag := range promArgs {
+			if flag == test.expectedRetentionArg {
+				foundRetention = true
+			} else if flag == test.expectedRetentionSizeArg {
+				foundRetentionSize = true
+			}
+
+			if strings.HasPrefix(flag, retentionFlag) {
+				foundRetentionFlag = true
+			} else if strings.HasPrefix(flag, "--storage.tsdb.retention.size") {
+				foundRetentionSizeFlag = true
+			}
+		}
+
+		if test.shouldContainRetention {
+			require.True(t, (foundRetention && foundRetentionFlag))
+		}
+
+		if test.shouldContainRetentionSize {
+			require.True(t, (foundRetentionSize && foundRetentionSizeFlag))
+		}
 	}
 }
 
@@ -1428,7 +1416,7 @@ func TestAdditionalContainers(t *testing.T) {
 	addSset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				Containers: []corev1.Container{
+				Containers: []v1.Container{
 					{
 						Name: "extra-container",
 					},
@@ -1446,7 +1434,7 @@ func TestAdditionalContainers(t *testing.T) {
 	modSset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				Containers: []corev1.Container{
+				Containers: []v1.Container{
 					{
 						Name:  existingContainerName,
 						Image: containerImage,
@@ -1562,7 +1550,7 @@ func TestTSDBAllowOverlappingCompaction(t *testing.T) {
 			name:                    "Verify AllowOverlappingCompaction",
 			version:                 "v2.55.0",
 			outOfOrderTimeWindow:    "1s",
-			objectStorageConfigFile: new("/etc/thanos.cfg"),
+			objectStorageConfigFile: ptr.To("/etc/thanos.cfg"),
 			shouldContain:           true,
 		},
 	}
@@ -1574,7 +1562,7 @@ func TestTSDBAllowOverlappingCompaction(t *testing.T) {
 					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 						Version: test.version,
 						TSDB: &monitoringv1.TSDBSpec{
-							OutOfOrderTimeWindow: new(test.outOfOrderTimeWindow),
+							OutOfOrderTimeWindow: ptr.To(test.outOfOrderTimeWindow),
 						},
 					},
 					Thanos: &monitoringv1.ThanosSpec{
@@ -1656,7 +1644,7 @@ func TestTerminationPolicy(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, c := range sset.Spec.Template.Spec.Containers {
-		require.Equal(t, corev1.TerminationMessageFallbackToLogsOnError, c.TerminationMessagePolicy, "Unexpected TermintationMessagePolicy. Expected %v got %v", corev1.TerminationMessageFallbackToLogsOnError, c.TerminationMessagePolicy)
+		require.Equal(t, v1.TerminationMessageFallbackToLogsOnError, c.TerminationMessagePolicy, "Unexpected TermintationMessagePolicy. Expected %v got %v", v1.TerminationMessageFallbackToLogsOnError, c.TerminationMessagePolicy)
 	}
 }
 
@@ -1784,7 +1772,7 @@ func TestExpectStatefulSetMinReadySeconds(t *testing.T) {
 	sset, err = makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				MinReadySeconds: new(int32(5)),
+				MinReadySeconds: ptr.To(int32(5)),
 			},
 		},
 	})
@@ -1817,7 +1805,6 @@ func TestConfigReloader(t *testing.T) {
 		"--reload-url=http://localhost:9090/-/reload",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
-		"--watched-dir=/etc/prometheus/config",
 	}
 
 	for _, c := range sset.Spec.Template.Spec.Containers {
@@ -1834,7 +1821,6 @@ func TestConfigReloader(t *testing.T) {
 		"--listen-address=:8080",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
-		"--watched-dir=/etc/prometheus/config",
 	}
 
 	for _, c := range sset.Spec.Template.Spec.Containers {
@@ -1878,7 +1864,6 @@ func TestConfigReloaderWithSignal(t *testing.T) {
 		"--runtimeinfo-url=http://localhost:9090/api/v1/status/runtimeinfo",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
-		"--watched-dir=/etc/prometheus/config",
 	}
 
 	for _, c := range sset.Spec.Template.Spec.Containers {
@@ -1901,7 +1886,6 @@ func TestConfigReloaderWithSignal(t *testing.T) {
 		"--listen-address=:8081",
 		"--config-file=/etc/prometheus/config/prometheus.yaml.gz",
 		"--config-envsubst-file=/etc/prometheus/config_out/prometheus.env.yaml",
-		"--watched-dir=/etc/prometheus/config",
 	}
 
 	for _, c := range sset.Spec.Template.Spec.InitContainers {
@@ -2056,7 +2040,7 @@ func TestScrapeFailureLogFileVolumeMountPresent(t *testing.T) {
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				ScrapeFailureLogFile: new("file.log"),
+				ScrapeFailureLogFile: ptr.To("file.log"),
 			},
 		},
 	})
@@ -2091,7 +2075,7 @@ func TestScrapeFailureLogFileVolumeMountNotPresent(t *testing.T) {
 	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
 		Spec: monitoringv1.PrometheusSpec{
 			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				ScrapeFailureLogFile: new("/tmp/file.log"),
+				ScrapeFailureLogFile: ptr.To("/tmp/file.log"),
 			},
 		},
 	})
@@ -2221,28 +2205,28 @@ func TestPodTemplateConfig(t *testing.T) {
 	nodeSelector := map[string]string{
 		"foo": "bar",
 	}
-	affinity := corev1.Affinity{
-		NodeAffinity: &corev1.NodeAffinity{},
-		PodAffinity: &corev1.PodAffinity{
-			PreferredDuringSchedulingIgnoredDuringExecution: []corev1.WeightedPodAffinityTerm{
+	affinity := v1.Affinity{
+		NodeAffinity: &v1.NodeAffinity{},
+		PodAffinity: &v1.PodAffinity{
+			PreferredDuringSchedulingIgnoredDuringExecution: []v1.WeightedPodAffinityTerm{
 				{
-					PodAffinityTerm: corev1.PodAffinityTerm{
+					PodAffinityTerm: v1.PodAffinityTerm{
 						Namespaces: []string{"foo"},
 					},
 					Weight: 100,
 				},
 			},
 		},
-		PodAntiAffinity: &corev1.PodAntiAffinity{},
+		PodAntiAffinity: &v1.PodAntiAffinity{},
 	}
 
-	tolerations := []corev1.Toleration{
+	tolerations := []v1.Toleration{
 		{
 			Key: "key",
 		},
 	}
 	userid := int64(1234)
-	securityContext := corev1.PodSecurityContext{
+	securityContext := v1.PodSecurityContext{
 		RunAsUser: &userid,
 	}
 	priorityClassName := "foo"
@@ -2253,13 +2237,12 @@ func TestPodTemplateConfig(t *testing.T) {
 			IP:        "1.1.1.1",
 		},
 	}
-	imagePullPolicy := corev1.PullAlways
-	imagePullSecrets := []corev1.LocalObjectReference{
+	imagePullPolicy := v1.PullAlways
+	imagePullSecrets := []v1.LocalObjectReference{
 		{
 			Name: "registry-secret",
 		},
 	}
-	schedulerName := "my-scheduler"
 
 	hostNetwork := false
 	hostUsers := true
@@ -2277,9 +2260,8 @@ func TestPodTemplateConfig(t *testing.T) {
 				HostAliases:        hostAliases,
 				ImagePullPolicy:    imagePullPolicy,
 				ImagePullSecrets:   imagePullSecrets,
-				SchedulerName:      schedulerName,
 				HostNetwork:        hostNetwork,
-				HostUsers:          new(true),
+				HostUsers:          ptr.To(true),
 			},
 		},
 	})
@@ -2291,7 +2273,6 @@ func TestPodTemplateConfig(t *testing.T) {
 	require.Equal(t, securityContext, *sset.Spec.Template.Spec.SecurityContext, "expected security context  to match, want %v, got %v", securityContext, *sset.Spec.Template.Spec.SecurityContext)
 	require.Equal(t, priorityClassName, sset.Spec.Template.Spec.PriorityClassName, "expected priority class name to match, want %s, got %s", priorityClassName, sset.Spec.Template.Spec.PriorityClassName)
 	require.Equal(t, serviceAccountName, sset.Spec.Template.Spec.ServiceAccountName, "expected service account name to match, want %s, got %s", serviceAccountName, sset.Spec.Template.Spec.ServiceAccountName)
-	require.Equal(t, schedulerName, sset.Spec.Template.Spec.SchedulerName, "expected scheduler name to match, want %s, got %s", schedulerName, sset.Spec.Template.Spec.SchedulerName)
 	require.Len(t, sset.Spec.Template.Spec.HostAliases, len(hostAliases), "expected length of host aliases to match, want %d, got %d", len(hostAliases), len(sset.Spec.Template.Spec.HostAliases))
 	require.Equal(t, hostUsers, *sset.Spec.Template.Spec.HostUsers, "expected host users to match, want %s, got %s", hostUsers, sset.Spec.Template.Spec.HostUsers)
 	for _, initContainer := range sset.Spec.Template.Spec.InitContainers {
@@ -2345,6 +2326,7 @@ func TestPrometheusAdditionalArgsNoError(t *testing.T) {
 
 	for _, argTest := range argTests {
 		t.Run(argTest.version, func(t *testing.T) {
+
 			labels := map[string]string{
 				"testlabel": "testlabelvalue",
 			}
@@ -2378,6 +2360,7 @@ func TestPrometheusAdditionalArgsNoError(t *testing.T) {
 			// web.console.templates and web.console.libraries should be present in prometheus versisons < 3
 			require.Equal(t, argTest.expectedArgs, ssetContainerArgs, "expected Prometheus container args to match, want %s, got %s", argTest.expectedArgs, ssetContainerArgs)
 		})
+
 	}
 }
 
@@ -2422,13 +2405,13 @@ func TestRuntimeGOGCEnvVar(t *testing.T) {
 		{
 			scenario:       "Prometheus < 2.53.0",
 			version:        "v2.51.2",
-			gogc:           new(int32(50)),
+			gogc:           ptr.To(int32(50)),
 			expectedEnvVar: true,
 		},
 		{
 			scenario:       "Prometheus > 2.53.0",
 			version:        "v2.54.0",
-			gogc:           new(int32(50)),
+			gogc:           ptr.To(int32(50)),
 			expectedEnvVar: false,
 		},
 	} {
@@ -2529,139 +2512,6 @@ func TestPrometheusAdditionalNoPrefixArgsDuplicate(t *testing.T) {
 	require.Contains(t, err.Error(), expectedErrorMsg, "expected the following text to be present in the error msg: %s", expectedErrorMsg)
 }
 
-func TestThanosGrpcArguments(t *testing.T) {
-	expectedThanosArgs := []string{
-		"sidecar",
-		"--prometheus.url=http://localhost:9090/",
-		"--grpc-address=:10901",
-		"--http-address=:10902",
-		"--grpc-server-tls-cert=/tmp/cert",
-		"--grpc-server-tls-key=/tmp/key",
-		"--grpc-server-tls-client-ca=/tmp/ca",
-		"--grpc-server-tls-min-version=1.3",
-		"--prometheus.http-client-file=/etc/thanos/config/prometheus.http-client-file.yaml",
-	}
-
-	sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
-		Spec: monitoringv1.PrometheusSpec{
-			Thanos: &monitoringv1.ThanosSpec{
-				GRPCServerTLSConfig: &monitoringv1.GRPCServerTLSConfig{
-					TLSConfig: monitoringv1.TLSConfig{
-						SafeTLSConfig: monitoringv1.SafeTLSConfig{
-							MinVersion: ptr.To(monitoringv1.TLSVersion13),
-						},
-						TLSFilesConfig: monitoringv1.TLSFilesConfig{
-							CAFile:   "/tmp/ca",
-							CertFile: "/tmp/cert",
-							KeyFile:  "/tmp/key",
-						},
-					},
-				},
-			},
-		},
-	})
-	require.NoError(t, err)
-
-	ssetContainerArgs := sset.Spec.Template.Spec.Containers[2].Args
-	require.Equal(t, expectedThanosArgs, ssetContainerArgs)
-}
-
-func TestGRPCServerTLSCipherSuites(t *testing.T) {
-	ciphers := []string{"TLS_AES_128_GCM_SHA256", "TLS_AES_256_GCM_SHA384"}
-
-	for _, tc := range []struct {
-		scenario      string
-		version       string
-		cipherSuites  []string
-		shouldHaveArg bool
-	}{
-		{
-			scenario:      "version >= 0.42.0 with cipher suites",
-			version:       "0.42.0",
-			cipherSuites:  ciphers,
-			shouldHaveArg: true,
-		},
-		{
-			scenario:      "version < 0.42.0 with cipher suites",
-			version:       "0.41.0",
-			cipherSuites:  ciphers,
-			shouldHaveArg: false,
-		},
-		{
-			scenario:      "version >= 0.42.0 without cipher suites",
-			version:       "0.42.0",
-			cipherSuites:  nil,
-			shouldHaveArg: false,
-		},
-	} {
-		t.Run(tc.scenario, func(t *testing.T) {
-			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
-				Spec: monitoringv1.PrometheusSpec{
-					Thanos: &monitoringv1.ThanosSpec{
-						Version: new(tc.version),
-						GRPCServerTLSConfig: &monitoringv1.GRPCServerTLSConfig{
-							CipherSuites: tc.cipherSuites,
-						},
-					},
-				},
-			})
-			require.NoError(t, err)
-
-			thanosArgs := sset.Spec.Template.Spec.Containers[2].Args
-			expectedArg := "--grpc-server-tls-ciphers=TLS_AES_128_GCM_SHA256,TLS_AES_256_GCM_SHA384"
-			require.Equal(t, tc.shouldHaveArg, slices.Contains(thanosArgs, expectedArg))
-		})
-	}
-}
-
-func TestGRPCServerTLSCurves(t *testing.T) {
-	curves := []string{"CurveP256", "X25519"}
-
-	for _, tc := range []struct {
-		scenario      string
-		version       string
-		curves        []string
-		shouldHaveArg bool
-	}{
-		{
-			scenario:      "version >= 0.42.0 with curve preferences",
-			version:       "0.42.0",
-			curves:        curves,
-			shouldHaveArg: true,
-		},
-		{
-			scenario:      "version < 0.42.0 with curve preferences",
-			version:       "0.41.0",
-			curves:        curves,
-			shouldHaveArg: false,
-		},
-		{
-			scenario:      "version >= 0.42.0 without curve preferences",
-			version:       "0.42.0",
-			curves:        nil,
-			shouldHaveArg: false,
-		},
-	} {
-		t.Run(tc.scenario, func(t *testing.T) {
-			sset, err := makeStatefulSetFromPrometheus(monitoringv1.Prometheus{
-				Spec: monitoringv1.PrometheusSpec{
-					Thanos: &monitoringv1.ThanosSpec{
-						Version: new(tc.version),
-						GRPCServerTLSConfig: &monitoringv1.GRPCServerTLSConfig{
-							Curves: tc.curves,
-						},
-					},
-				},
-			})
-			require.NoError(t, err)
-
-			thanosArgs := sset.Spec.Template.Spec.Containers[2].Args
-			expectedArg := "--grpc-server-tls-curves=CurveP256,X25519"
-			require.Equal(t, tc.shouldHaveArg, slices.Contains(thanosArgs, expectedArg))
-		})
-	}
-}
-
 func TestThanosAdditionalArgsNoError(t *testing.T) {
 	expectedThanosArgs := []string{
 		"sidecar",
@@ -2753,9 +2603,9 @@ func TestPrometheusQuerySpec(t *testing.T) {
 		},
 		{
 			name:           "all values provided",
-			lookbackDelta:  new("2m"),
-			maxConcurrency: new(int32(10)),
-			maxSamples:     new(int32(10000)),
+			lookbackDelta:  ptr.To("2m"),
+			maxConcurrency: ptr.To(int32(10)),
+			maxSamples:     ptr.To(int32(10000)),
 			timeout:        ptr.To(monitoringv1.Duration("1m")),
 
 			expected: []string{
@@ -2767,9 +2617,9 @@ func TestPrometheusQuerySpec(t *testing.T) {
 		},
 		{
 			name:           "zero values are skipped",
-			lookbackDelta:  new("2m"),
-			maxConcurrency: new(int32(0)),
-			maxSamples:     new(int32(0)),
+			lookbackDelta:  ptr.To("2m"),
+			maxConcurrency: ptr.To(int32(0)),
+			maxSamples:     ptr.To(int32(0)),
 			timeout:        ptr.To(monitoringv1.Duration("1m")),
 
 			expected: []string{
@@ -2778,18 +2628,10 @@ func TestPrometheusQuerySpec(t *testing.T) {
 			},
 		},
 		{
-			name:           "maxConcurrency set to 1",
-			maxConcurrency: new(int32(1)),
-
-			expected: []string{
-				"--query.max-concurrency=1",
-			},
-		},
-		{
 			name:           "max samples skipped if version < 2.5",
-			lookbackDelta:  new("2m"),
-			maxConcurrency: new(int32(10)),
-			maxSamples:     new(int32(10000)),
+			lookbackDelta:  ptr.To("2m"),
+			maxConcurrency: ptr.To(int32(10)),
+			maxSamples:     ptr.To(int32(10000)),
 			timeout:        ptr.To(monitoringv1.Duration("1m")),
 			version:        "v2.4.0",
 
@@ -2801,9 +2643,9 @@ func TestPrometheusQuerySpec(t *testing.T) {
 		},
 		{
 			name:           "max samples not skipped if version > 2.5",
-			lookbackDelta:  new("2m"),
-			maxConcurrency: new(int32(10)),
-			maxSamples:     new(int32(10000)),
+			lookbackDelta:  ptr.To("2m"),
+			maxConcurrency: ptr.To(int32(10)),
+			maxSamples:     ptr.To(int32(10000)),
 			timeout:        ptr.To(monitoringv1.Duration("1m")),
 			version:        "v2.5.0",
 
@@ -2883,7 +2725,7 @@ func TestSecurityContextCapabilities(t *testing.T) {
 			name: "Thanos sidecar with object storage",
 			spec: monitoringv1.PrometheusSpec{
 				Thanos: &monitoringv1.ThanosSpec{
-					ObjectStorageConfigFile: new("/etc/thanos.cfg"),
+					ObjectStorageConfigFile: ptr.To("/etc/thanos.cfg"),
 				},
 			},
 		},
@@ -2921,7 +2763,7 @@ func TestPodHostNetworkConfig(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, hostNetwork, sset.Spec.Template.Spec.HostNetwork, "expected hostNetwork configuration to match but failed")
-	require.Equal(t, corev1.DNSClusterFirstWithHostNet, sset.Spec.Template.Spec.DNSPolicy, "expected DNSPolicy configuration to match due to hostNetwork but failed")
+	require.Equal(t, v1.DNSClusterFirstWithHostNet, sset.Spec.Template.Spec.DNSPolicy, "expected DNSPolicy configuration to match due to hostNetwork but failed")
 }
 
 func TestPersistentVolumeClaimRetentionPolicy(t *testing.T) {
@@ -2946,7 +2788,7 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 	for _, tc := range []struct {
 		name string
 		spec monitoringv1.PrometheusSpec
-		tsc  corev1.TopologySpreadConstraint
+		tsc  v1.TopologySpreadConstraint
 	}{
 		{
 			name: "without labelSelector and additionalLabels",
@@ -2957,16 +2799,16 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
 								MaxSkew:           1,
 								TopologyKey:       "kubernetes.io/hostname",
-								WhenUnsatisfiable: corev1.DoNotSchedule,
+								WhenUnsatisfiable: v1.DoNotSchedule,
 							},
 						},
 					},
 				},
 			},
-			tsc: corev1.TopologySpreadConstraint{
+			tsc: v1.TopologySpreadConstraint{
 				MaxSkew:           1,
 				TopologyKey:       "kubernetes.io/hostname",
-				WhenUnsatisfiable: corev1.DoNotSchedule,
+				WhenUnsatisfiable: v1.DoNotSchedule,
 			},
 		},
 		{
@@ -2978,7 +2820,7 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
 								MaxSkew:           1,
 								TopologyKey:       "kubernetes.io/hostname",
-								WhenUnsatisfiable: corev1.DoNotSchedule,
+								WhenUnsatisfiable: v1.DoNotSchedule,
 								LabelSelector: &metav1.LabelSelector{
 									MatchLabels: map[string]string{
 										"app": "prometheus",
@@ -2989,10 +2831,10 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 					},
 				},
 			},
-			tsc: corev1.TopologySpreadConstraint{
+			tsc: v1.TopologySpreadConstraint{
 				MaxSkew:           1,
 				TopologyKey:       "kubernetes.io/hostname",
-				WhenUnsatisfiable: corev1.DoNotSchedule,
+				WhenUnsatisfiable: v1.DoNotSchedule,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"app": "prometheus",
@@ -3010,7 +2852,7 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
 								MaxSkew:           1,
 								TopologyKey:       "kubernetes.io/hostname",
-								WhenUnsatisfiable: corev1.DoNotSchedule,
+								WhenUnsatisfiable: v1.DoNotSchedule,
 								LabelSelector: &metav1.LabelSelector{
 									MatchLabels: map[string]string{
 										"app": "prometheus",
@@ -3021,10 +2863,10 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 					},
 				},
 			},
-			tsc: corev1.TopologySpreadConstraint{
+			tsc: v1.TopologySpreadConstraint{
 				MaxSkew:           1,
 				TopologyKey:       "kubernetes.io/hostname",
-				WhenUnsatisfiable: corev1.DoNotSchedule,
+				WhenUnsatisfiable: v1.DoNotSchedule,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"app":                            "prometheus",
@@ -3048,7 +2890,7 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 							CoreV1TopologySpreadConstraint: monitoringv1.CoreV1TopologySpreadConstraint{
 								MaxSkew:           1,
 								TopologyKey:       "kubernetes.io/hostname",
-								WhenUnsatisfiable: corev1.DoNotSchedule,
+								WhenUnsatisfiable: v1.DoNotSchedule,
 								LabelSelector: &metav1.LabelSelector{
 									MatchLabels: map[string]string{
 										"app": "prometheus",
@@ -3059,10 +2901,10 @@ func TestPodTopologySpreadConstraintWithAdditionalLabels(t *testing.T) {
 					},
 				},
 			},
-			tsc: corev1.TopologySpreadConstraint{
+			tsc: v1.TopologySpreadConstraint{
 				MaxSkew:           1,
 				TopologyKey:       "kubernetes.io/hostname",
-				WhenUnsatisfiable: corev1.DoNotSchedule,
+				WhenUnsatisfiable: v1.DoNotSchedule,
 				LabelSelector: &metav1.LabelSelector{
 					MatchLabels: map[string]string{
 						"app":                            "prometheus",
@@ -3105,7 +2947,7 @@ func TestStartupProbeTimeoutSeconds(t *testing.T) {
 			expectedStartupFailureThreshold: 60,
 		},
 		{
-			maximumStartupDurationSeconds:   new(int32(600)),
+			maximumStartupDurationSeconds:   ptr.To(int32(600)),
 			expectedStartupPeriodSeconds:    60,
 			expectedStartupFailureThreshold: 10,
 		},
@@ -3208,12 +3050,12 @@ func TestAutomountServiceAccountToken(t *testing.T) {
 		},
 		{
 			name:                         "automountServiceAccountToken set to true",
-			automountServiceAccountToken: new(true),
+			automountServiceAccountToken: ptr.To(true),
 			expectedValue:                true,
 		},
 		{
 			name:                         "automountServiceAccountToken set to false",
-			automountServiceAccountToken: new(false),
+			automountServiceAccountToken: ptr.To(false),
 			expectedValue:                false,
 		},
 	} {
@@ -3238,46 +3080,46 @@ func TestAutomountServiceAccountToken(t *testing.T) {
 func TestDNSPolicyAndDNSConfig(t *testing.T) {
 	tests := []struct {
 		name              string
-		dnsPolicy         corev1.DNSPolicy
-		dnsConfig         *corev1.PodDNSConfig
-		expectedDNSPolicy corev1.DNSPolicy
-		expectedDNSConfig *corev1.PodDNSConfig
+		dnsPolicy         v1.DNSPolicy
+		dnsConfig         *v1.PodDNSConfig
+		expectedDNSPolicy v1.DNSPolicy
+		expectedDNSConfig *v1.PodDNSConfig
 	}{
 		{
 			name:              "Default DNSPolicy and DNSConfig",
-			dnsPolicy:         corev1.DNSClusterFirst,
+			dnsPolicy:         v1.DNSClusterFirst,
 			dnsConfig:         nil,
-			expectedDNSPolicy: corev1.DNSClusterFirst,
+			expectedDNSPolicy: v1.DNSClusterFirst,
 			expectedDNSConfig: nil,
 		},
 		{
 			name:              "Custom DNSPolicy",
-			dnsPolicy:         corev1.DNSDefault,
+			dnsPolicy:         v1.DNSDefault,
 			dnsConfig:         nil,
-			expectedDNSPolicy: corev1.DNSDefault,
+			expectedDNSPolicy: v1.DNSDefault,
 			expectedDNSConfig: nil,
 		},
 		{
 			name:      "Custom DNSConfig",
-			dnsPolicy: corev1.DNSClusterFirst,
-			dnsConfig: &corev1.PodDNSConfig{
+			dnsPolicy: v1.DNSClusterFirst,
+			dnsConfig: &v1.PodDNSConfig{
 				Nameservers: []string{"8.8.8.8", "8.8.4.4"},
 				Searches:    []string{"custom.svc.cluster.local"},
 			},
-			expectedDNSPolicy: corev1.DNSClusterFirst,
-			expectedDNSConfig: &corev1.PodDNSConfig{
+			expectedDNSPolicy: v1.DNSClusterFirst,
+			expectedDNSConfig: &v1.PodDNSConfig{
 				Nameservers: []string{"8.8.8.8", "8.8.4.4"},
 				Searches:    []string{"custom.svc.cluster.local"},
 			},
 		},
 		{
 			name:      "Custom DNS Policy with Search Domains",
-			dnsPolicy: corev1.DNSDefault,
-			dnsConfig: &corev1.PodDNSConfig{
+			dnsPolicy: v1.DNSDefault,
+			dnsConfig: &v1.PodDNSConfig{
 				Searches: []string{"kitsos.com", "kitsos.org"},
 			},
-			expectedDNSPolicy: corev1.DNSDefault,
-			expectedDNSConfig: &corev1.PodDNSConfig{
+			expectedDNSPolicy: v1.DNSDefault,
+			expectedDNSConfig: &v1.PodDNSConfig{
 				Searches: []string{"kitsos.com", "kitsos.org"},
 			},
 		},
@@ -3285,7 +3127,7 @@ func TestDNSPolicyAndDNSConfig(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			monitoringDNSPolicyPtr := new(monitoringv1.DNSPolicy(test.dnsPolicy))
+			monitoringDNSPolicyPtr := ptr.To(monitoringv1.DNSPolicy(test.dnsPolicy))
 
 			var monitoringDNSConfig *monitoringv1.PodDNSConfig
 			if test.dnsConfig != nil {
@@ -3323,8 +3165,8 @@ func TestStatefulSetenableServiceLinks(t *testing.T) {
 		enableServiceLinks         *bool
 		expectedEnableServiceLinks *bool
 	}{
-		{enableServiceLinks: new(false), expectedEnableServiceLinks: new(false)},
-		{enableServiceLinks: new(true), expectedEnableServiceLinks: new(true)},
+		{enableServiceLinks: ptr.To(false), expectedEnableServiceLinks: ptr.To(false)},
+		{enableServiceLinks: ptr.To(true), expectedEnableServiceLinks: ptr.To(true)},
 		{enableServiceLinks: nil, expectedEnableServiceLinks: nil},
 	}
 
@@ -3403,13 +3245,13 @@ func TestStatefulSetUpdateStrategy(t *testing.T) {
 			updateStrategy: &monitoringv1.StatefulSetUpdateStrategy{
 				Type: monitoringv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &monitoringv1.RollingUpdateStatefulSetStrategy{
-					MaxUnavailable: new(intstr.FromInt(1)),
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
 				},
 			},
 			exp: appsv1.StatefulSetUpdateStrategy{
 				Type: appsv1.RollingUpdateStatefulSetStrategyType,
 				RollingUpdate: &appsv1.RollingUpdateStatefulSetStrategy{
-					MaxUnavailable: new(intstr.FromInt(1)),
+					MaxUnavailable: ptr.To(intstr.FromInt(1)),
 				},
 			},
 		},
@@ -3433,98 +3275,6 @@ func TestStatefulSetUpdateStrategy(t *testing.T) {
 
 			require.NoError(t, err)
 			require.Equal(t, tc.exp, sset.Spec.UpdateStrategy)
-		})
-	}
-}
-
-func TestConfigReloaderTopologyZoneEnvVar(t *testing.T) {
-	topologyMode := monitoringv1.TopologyShardingStrategyMode
-
-	for _, tc := range []struct {
-		name             string
-		shardingStrategy *monitoringv1.ShardingStrategy
-		shardIndex       int32
-		expectedZone     string
-	}{
-		{
-			name: "shard 0 gets zone-a",
-			shardingStrategy: &monitoringv1.ShardingStrategy{
-				Mode: new(topologyMode),
-				Topology: &monitoringv1.TopologyShardingStrategy{
-					Values: []string{"zone-a", "zone-b"},
-				},
-			},
-			shardIndex:   0,
-			expectedZone: "zone-a",
-		},
-		{
-			name: "shard 1 gets zone-b",
-			shardingStrategy: &monitoringv1.ShardingStrategy{
-				Mode: new(topologyMode),
-				Topology: &monitoringv1.TopologyShardingStrategy{
-					Values: []string{"zone-a", "zone-b"},
-				},
-			},
-			shardIndex:   1,
-			expectedZone: "zone-b",
-		},
-		{
-			name:             "no topology mode means no zone env var",
-			shardingStrategy: nil,
-			shardIndex:       0,
-			expectedZone:     "",
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p := monitoringv1.Prometheus{
-				Spec: monitoringv1.PrometheusSpec{
-					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-						ShardingStrategy: tc.shardingStrategy,
-					},
-				},
-			}
-
-			logger := prompkg.NewLogger()
-			cg, err := prompkg.NewConfigGenerator(logger, &p, prompkg.WithPrometheusTopologySharding())
-			require.NoError(t, err)
-
-			sset, err := makeStatefulSet(
-				"test",
-				&p,
-				defaultTestConfig,
-				cg,
-				nil,
-				"",
-				tc.shardIndex,
-				&operator.ShardedSecret{},
-			)
-			require.NoError(t, err)
-
-			checkZoneEnvVar := func(containers []corev1.Container, containerName string) {
-				t.Helper()
-				for _, c := range containers {
-					if c.Name != containerName {
-						continue
-					}
-					var found bool
-					for _, env := range c.Env {
-						if env.Name == operator.TopologyZoneEnvVar {
-							assert.Equal(t, tc.expectedZone, env.Value)
-							found = true
-						}
-					}
-					if tc.expectedZone == "" {
-						assert.False(t, found, "unexpected %s env var in %s", operator.TopologyZoneEnvVar, containerName)
-					} else {
-						assert.True(t, found, "missing %s env var in %s", operator.TopologyZoneEnvVar, containerName)
-					}
-					return
-				}
-				t.Errorf("container %q not found", containerName)
-			}
-
-			checkZoneEnvVar(sset.Spec.Template.Spec.Containers, "config-reloader")
-			checkZoneEnvVar(sset.Spec.Template.Spec.InitContainers, "init-config-reloader")
 		})
 	}
 }

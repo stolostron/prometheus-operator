@@ -22,16 +22,8 @@ import (
 
 // StatefulSetUpdateStrategyApplyConfiguration represents a declarative configuration of the StatefulSetUpdateStrategy type for use
 // with apply.
-//
-// StatefulSetUpdateStrategy indicates the strategy used when updating the
-// StatefulSet. It includes any additional parameters necessary to perform the
-// update for the indicated strategy.
 type StatefulSetUpdateStrategyApplyConfiguration struct {
-	// type indicates the type of the StatefulSetUpdateStrategy.
-	//
-	// Default is RollingUpdate.
-	Type *monitoringv1.StatefulSetUpdateStrategyType `json:"type,omitempty"`
-	// rollingUpdate is used to communicate parameters when type is RollingUpdate.
+	Type          *monitoringv1.StatefulSetUpdateStrategyType         `json:"type,omitempty"`
 	RollingUpdate *RollingUpdateStatefulSetStrategyApplyConfiguration `json:"rollingUpdate,omitempty"`
 }
 

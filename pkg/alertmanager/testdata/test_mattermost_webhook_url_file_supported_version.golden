@@ -1,3 +1,0 @@
-global:
-  mattermost_webhook_url_file: /mattermost/webhook/url
-templates: []

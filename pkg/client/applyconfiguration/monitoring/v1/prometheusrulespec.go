@@ -18,10 +18,7 @@ package v1
 
 // PrometheusRuleSpecApplyConfiguration represents a declarative configuration of the PrometheusRuleSpec type for use
 // with apply.
-//
-// PrometheusRuleSpec contains specification parameters for a Rule.
 type PrometheusRuleSpecApplyConfiguration struct {
-	// groups defines the content of Prometheus rule file
 	Groups []RuleGroupApplyConfiguration `json:"groups,omitempty"`
 }
 

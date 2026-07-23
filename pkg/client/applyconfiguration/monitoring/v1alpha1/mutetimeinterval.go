@@ -18,12 +18,8 @@ package v1alpha1
 
 // MuteTimeIntervalApplyConfiguration represents a declarative configuration of the MuteTimeInterval type for use
 // with apply.
-//
-// MuteTimeInterval specifies the periods in time when notifications will be muted
 type MuteTimeIntervalApplyConfiguration struct {
-	// name of the time interval
-	Name *string `json:"name,omitempty"`
-	// timeIntervals defines a list of TimeInterval
+	Name          *string                          `json:"name,omitempty"`
 	TimeIntervals []TimeIntervalApplyConfiguration `json:"timeIntervals,omitempty"`
 }
 

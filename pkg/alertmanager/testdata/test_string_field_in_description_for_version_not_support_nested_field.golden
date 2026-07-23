@@ -1,7 +1,0 @@
-receivers:
-- name: ""
-  pagerduty_configs:
-  - details:
-      foo: bar
-      key: value
-templates: []

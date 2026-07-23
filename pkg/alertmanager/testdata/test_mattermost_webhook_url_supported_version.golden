@@ -1,3 +1,0 @@
-global:
-  mattermost_webhook_url: //www.test.com
-templates: []

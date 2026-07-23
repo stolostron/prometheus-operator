@@ -24,13 +24,9 @@ import (
 // GlobalWeChatConfigApplyConfiguration represents a declarative configuration of the GlobalWeChatConfig type for use
 // with apply.
 type GlobalWeChatConfigApplyConfiguration struct {
-	// apiURL defines he default WeChat API URL.
-	// The default value is "https://qyapi.weixin.qq.com/cgi-bin/"
-	APIURL *monitoringv1.URL `json:"apiURL,omitempty"`
-	// apiSecret defines the default WeChat API Secret.
+	APIURL    *monitoringv1.URL         `json:"apiURL,omitempty"`
 	APISecret *corev1.SecretKeySelector `json:"apiSecret,omitempty"`
-	// apiCorpID defines the default WeChat API Corporate ID.
-	APICorpID *string `json:"apiCorpID,omitempty"`
+	APICorpID *string                   `json:"apiCorpID,omitempty"`
 }
 
 // GlobalWeChatConfigApplyConfiguration constructs a declarative configuration of the GlobalWeChatConfig type for use with

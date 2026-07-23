@@ -10,7 +10,6 @@ local defaults = {
     requests: { cpu: '', memory: '' },
   },
   enableReloaderProbes: false,
-  repairPolicy: '',  // can be 'none' (default), 'delete' or 'evict'
   goGC: '30',
   port: 8080,
   resources: {
@@ -183,25 +182,11 @@ function(params) {
                ]
              else
                []
-           )
-           + (
-             if po.config.repairPolicy == 'evict' then
-               [
-                 {
-                   apiGroups: [''],
-                   resources: [
-                     'pods/eviction',
-                   ],
-                   verbs: ['create'],
-                 },
-               ]
-             else
-               []
            ),
   },
 
   deployment:
-    local optionalArg(arg, value) =
+    local reloaderResourceArg(arg, value) =
       if value != '' then [arg + '=' + value] else [];
     local enableReloaderProbesArg(value) =
       if value == true then ['--enable-config-reloader-probes=true'] else [];
@@ -217,12 +202,11 @@ function(params) {
             ] +
             [std.format('--kubelet-endpoints=%s', po.config.kubeletEndpointsEnabled)] +
             [std.format('--kubelet-endpointslice=%s', po.config.kubeletEndpointSliceEnabled)] +
-            optionalArg('--config-reloader-cpu-limit', po.config.configReloaderResources.limits.cpu) +
-            optionalArg('--config-reloader-memory-limit', po.config.configReloaderResources.limits.memory) +
-            optionalArg('--config-reloader-cpu-request', po.config.configReloaderResources.requests.cpu) +
-            optionalArg('--config-reloader-memory-request', po.config.configReloaderResources.requests.memory) +
-            enableReloaderProbesArg(po.config.enableReloaderProbes) +
-            optionalArg('--repair-policy-for-statefulsets', po.config.repairPolicy),
+            reloaderResourceArg('--config-reloader-cpu-limit', po.config.configReloaderResources.limits.cpu) +
+            reloaderResourceArg('--config-reloader-memory-limit', po.config.configReloaderResources.limits.memory) +
+            reloaderResourceArg('--config-reloader-cpu-request', po.config.configReloaderResources.requests.cpu) +
+            reloaderResourceArg('--config-reloader-memory-request', po.config.configReloaderResources.requests.memory) +
+            enableReloaderProbesArg(po.config.enableReloaderProbes),
       ports: [{
         containerPort: po.config.port,
         name: 'http',

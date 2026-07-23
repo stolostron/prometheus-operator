@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2023 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,23 +19,23 @@ import (
 
 	"github.com/stretchr/testify/require"
 
-	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
+	v1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
 
 func TestBuildArgs(t *testing.T) {
 	for _, tc := range []struct {
-		a   []monitoringv1.Argument
-		b   []monitoringv1.Argument
+		a   []v1.Argument
+		b   []v1.Argument
 		exp []string
 		err bool
 	}{
 		{
-			a: []monitoringv1.Argument{
+			a: []v1.Argument{
 				{Name: "test", Value: "value"},
 				{Name: "test2-test", Value: "value2"},
 				{Name: "test3.test", Value: "value3"},
 			},
-			b: []monitoringv1.Argument{
+			b: []v1.Argument{
 				{Name: "addtest", Value: "value"},
 				{Name: "addtest2-test", Value: "value2"},
 				{Name: "addtest3.test", Value: "value3"},
@@ -50,22 +50,22 @@ func TestBuildArgs(t *testing.T) {
 			},
 		},
 		{
-			a: []monitoringv1.Argument{
+			a: []v1.Argument{
 				{Name: "test", Value: "value"},
 				{Name: "test2", Value: "value2"},
 			},
-			b: []monitoringv1.Argument{
+			b: []v1.Argument{
 				{Name: "addtest", Value: "value"},
 				{Name: "test2", Value: "value3"},
 			},
 			err: true,
 		},
 		{
-			a: []monitoringv1.Argument{
+			a: []v1.Argument{
 				{Name: "test", Value: "value"},
 				{Name: "test2", Value: ""},
 			},
-			b: []monitoringv1.Argument{
+			b: []v1.Argument{
 				{Name: "addtest", Value: "value"},
 				{Name: "no-test2", Value: ""},
 			},

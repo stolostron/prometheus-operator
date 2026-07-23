@@ -18,7 +18,7 @@ scrape_configs:
       values:
       - dummy_value_2
       - dummy_value_3
-    host: unix:///var/run/docker.sock
+    host: hostAddress
     tls_config:
       ca_file: /etc/prometheus/certs/0_default_tls_ca
       cert_file: /etc/prometheus/certs/0_default_tls_cert

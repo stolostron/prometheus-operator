@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,13 +20,10 @@ import (
 	"flag"
 	"fmt"
 	"log/slog"
-	"maps"
 	"net"
 	"net/http"
 	"os"
 	"path/filepath"
-	"slices"
-	"strings"
 	"time"
 
 	"k8s.io/apiserver/pkg/server/dynamiccertificates"
@@ -61,7 +58,6 @@ func DefaultConfig(listenAddress string, enableTLS bool) Config {
 			ClientCAFile:   filepath.Join(defaultTLSDir, "tls-ca.crt"),
 			MinVersion:     defaultTLSVersion,
 			CipherSuites:   operator.StringSet{},
-			Curves:         operator.StringSet{},
 			ReloadInterval: time.Minute,
 		},
 	}
@@ -85,23 +81,6 @@ func RegisterFlags(fs *flag.FlagSet, c *Config) {
 		" Values are from tls package constants (https://golang.org/pkg/crypto/tls/#pkg-constants)."+
 		"If omitted, the default Go cipher suites will be used. "+
 		"Note that TLS 1.3 ciphersuites are not configurable.")
-	fs.Var(&c.TLSConfig.Curves, "web.tls-curves", "Comma-separated list of TLS curves for the server. Supported values: "+strings.Join(slices.Sorted(maps.Keys(supportedCurves)), ", ")+".")
-}
-
-var supportedCurves = map[string]tls.CurveID{}
-
-func init() {
-	// NOTE: the list can be expanded as new curves get added to the Go standard
-	// library. The current list corresponds to what is supported in Go 1.25.
-	for _, c := range []tls.CurveID{
-		tls.CurveP256,
-		tls.CurveP384,
-		tls.CurveP521,
-		tls.X25519,
-		tls.X25519MLKEM768,
-	} {
-		supportedCurves[c.String()] = c
-	}
 }
 
 // Config defines the web server configuration.
@@ -119,7 +98,6 @@ type TLSConfig struct {
 	ClientCAFile   string
 	MinVersion     string
 	CipherSuites   operator.StringSet
-	Curves         operator.StringSet
 	ReloadInterval time.Duration
 }
 
@@ -169,19 +147,6 @@ func (tc *TLSConfig) Convert(logger *slog.Logger) (*tls.Config, error) {
 	// If CipherSuites is nil, a default list of secure cipher suites is used.
 	// Note that TLS 1.3 ciphersuites are not configurable.
 	tlsCfg.CipherSuites = cipherSuiteIDs
-
-	// While the CurvePreferences name seems to imply that the order is
-	// important, it isn't taken into account when TLS negotiation happens
-	// hence there's no need to preserve the original order.
-	var curves []tls.CurveID
-	for _, curve := range tc.Curves.Slice() {
-		c, found := supportedCurves[curve]
-		if !found {
-			return nil, fmt.Errorf("%q is not a supported curve value", curve)
-		}
-		curves = append(curves, c)
-	}
-	tlsCfg.CurvePreferences = curves
 
 	if tc.ClientCAFile == "" {
 		return tlsCfg, nil

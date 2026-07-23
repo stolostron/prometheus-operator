@@ -23,19 +23,8 @@ import (
 // ShardRetentionPolicyApplyConfiguration represents a declarative configuration of the ShardRetentionPolicy type for use
 // with apply.
 type ShardRetentionPolicyApplyConfiguration struct {
-	// whenScaled defines the retention policy when the Prometheus shards are scaled down.
-	// * `Delete`, the operator will delete the pods from the scaled-down shard(s).
-	// * `Retain`, the operator will keep the pods from the scaled-down shard(s), so the data can still be queried.
-	//
-	// If not defined, the operator assumes the `Delete` value.
 	WhenScaled *monitoringv1.WhenScaledRetentionType `json:"whenScaled,omitempty"`
-	// retain defines the config for retention when the retention policy is set
-	// to `Retain`.
-	//
-	// If not defined, the operator will use the retention duration configured
-	// for the Prometheus data. If the resource uses size-based retention, the
-	// shard(s) are kept forever (unless manually deleted).
-	Retain *RetainConfigApplyConfiguration `json:"retain,omitempty"`
+	Retain     *RetainConfigApplyConfiguration       `json:"retain,omitempty"`
 }
 
 // ShardRetentionPolicyApplyConfiguration constructs a declarative configuration of the ShardRetentionPolicy type for use with

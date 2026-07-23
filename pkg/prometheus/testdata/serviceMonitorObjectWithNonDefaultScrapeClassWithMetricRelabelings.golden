@@ -86,7 +86,3 @@ scrape_configs:
     replacement: value1
   - target_label: namespace
     replacement: default
-storage:
-  tsdb:
-    retention:
-      time: 24h

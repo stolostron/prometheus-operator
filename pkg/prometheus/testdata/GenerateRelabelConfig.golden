@@ -103,7 +103,3 @@ scrape_configs:
   - target_label: job
     replacement: ""
     action: replace
-storage:
-  tsdb:
-    retention:
-      time: 24h

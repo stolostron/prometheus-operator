@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,7 +20,7 @@ import (
 	"time"
 
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
@@ -30,18 +30,18 @@ import (
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 )
 
-func (f *Framework) MakeBlackBoxExporterService(ns, name string) *corev1.Service {
-	return &corev1.Service{
+func (f *Framework) MakeBlackBoxExporterService(ns, name string) *v1.Service {
+	return &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
 		},
-		Spec: corev1.ServiceSpec{
-			Type: corev1.ServiceTypeClusterIP,
+		Spec: v1.ServiceSpec{
+			Type: v1.ServiceTypeClusterIP,
 			Selector: map[string]string{
 				operator.ApplicationNameLabelKey: "blackbox-exporter",
 			},
-			Ports: []corev1.ServicePort{
+			Ports: []v1.ServicePort{
 				{
 					Port:       9115,
 					TargetPort: intstr.FromInt(9115),
@@ -52,7 +52,7 @@ func (f *Framework) MakeBlackBoxExporterService(ns, name string) *corev1.Service
 }
 
 func (f *Framework) createBlackBoxExporterConfigMapAndWaitExists(ctx context.Context, ns, name string) error {
-	cm := &corev1.ConfigMap{
+	cm := &v1.ConfigMap{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      name,
 			Namespace: ns,
@@ -93,27 +93,27 @@ func (f *Framework) createBlackBoxExporterDeploymentAndWaitReady(ctx context.Con
 					operator.ApplicationNameLabelKey: "blackbox-exporter",
 				},
 			},
-			Template: corev1.PodTemplateSpec{
+			Template: v1.PodTemplateSpec{
 				ObjectMeta: metav1.ObjectMeta{
 					Labels: map[string]string{
 						operator.ApplicationNameLabelKey: "blackbox-exporter",
 					},
 				},
-				Spec: corev1.PodSpec{
-					Containers: []corev1.Container{
+				Spec: v1.PodSpec{
+					Containers: []v1.Container{
 						{
 							Name:  "blackbox-exporter",
 							Image: "prom/blackbox-exporter:v0.17.0",
 							Args: []string{
 								"--config.file=/config/blackbox.yml",
 							},
-							Ports: []corev1.ContainerPort{
+							Ports: []v1.ContainerPort{
 								{
 									ContainerPort: 9115,
-									Protocol:      corev1.ProtocolTCP,
+									Protocol:      v1.ProtocolTCP,
 								},
 							},
-							VolumeMounts: []corev1.VolumeMount{
+							VolumeMounts: []v1.VolumeMount{
 								{
 									Name:      "config",
 									MountPath: "/config",
@@ -121,12 +121,12 @@ func (f *Framework) createBlackBoxExporterDeploymentAndWaitReady(ctx context.Con
 							},
 						},
 					},
-					Volumes: []corev1.Volume{
+					Volumes: []v1.Volume{
 						{
 							Name: "config",
-							VolumeSource: corev1.VolumeSource{
-								ConfigMap: &corev1.ConfigMapVolumeSource{
-									LocalObjectReference: corev1.LocalObjectReference{
+							VolumeSource: v1.VolumeSource{
+								ConfigMap: &v1.ConfigMapVolumeSource{
+									LocalObjectReference: v1.LocalObjectReference{
 										Name: name,
 									},
 								},

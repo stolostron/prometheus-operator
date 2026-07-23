@@ -22,15 +22,10 @@ import (
 
 // AzureOAuthApplyConfiguration represents a declarative configuration of the AzureOAuth type for use
 // with apply.
-//
-// AzureOAuth defines the Azure OAuth settings.
 type AzureOAuthApplyConfiguration struct {
-	// clientId defines the clientId of the Azure Active Directory application that is being used to authenticate.
-	ClientID *string `json:"clientId,omitempty"`
-	// clientSecret specifies a key of a Secret containing the client secret of the Azure Active Directory application that is being used to authenticate.
+	ClientID     *string                   `json:"clientId,omitempty"`
 	ClientSecret *corev1.SecretKeySelector `json:"clientSecret,omitempty"`
-	// tenantId is the tenant ID of the Azure Active Directory application that is being used to authenticate.
-	TenantID *string `json:"tenantId,omitempty"`
+	TenantID     *string                   `json:"tenantId,omitempty"`
 }
 
 // AzureOAuthApplyConfiguration constructs a declarative configuration of the AzureOAuth type for use with

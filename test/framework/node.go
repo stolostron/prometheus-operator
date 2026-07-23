@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2024 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -20,16 +20,16 @@ import (
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
 // Nodes returns the list of nodes in the cluster.
-func (f *Framework) Nodes(ctx context.Context) ([]corev1.Node, error) {
+func (f *Framework) Nodes(ctx context.Context) ([]v1.Node, error) {
 	var (
 		loopErr error
-		nodes   *corev1.NodeList
+		nodes   *v1.NodeList
 	)
 
 	err := wait.PollUntilContextTimeout(ctx, time.Second, time.Minute*1, true, func(_ context.Context) (bool, error) {

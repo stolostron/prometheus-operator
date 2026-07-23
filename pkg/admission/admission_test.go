@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2019 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -27,7 +27,6 @@ import (
 
 	jsonpatch "github.com/evanphx/json-patch/v5"
 	"github.com/prometheus/common/model"
-	"github.com/prometheus/prometheus/promql/parser"
 	"github.com/stretchr/testify/require"
 	"gotest.tools/v3/golden"
 	v1 "k8s.io/api/admission/v1"
@@ -327,7 +326,6 @@ func apiWithValidationScheme(validationScheme model.ValidationScheme) *Admission
 	return New(
 		slog.New(slog.DiscardHandler),
 		validationScheme,
-		parser.Options{},
 	)
 }
 

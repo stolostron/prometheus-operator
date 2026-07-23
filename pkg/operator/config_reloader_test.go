@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2021 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,7 +22,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/assert"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 )
 
@@ -101,18 +101,18 @@ func TestCreateInitConfigReloaderEnableProbes(t *testing.T) {
 
 func TestCreateInitConfigReloader(t *testing.T) {
 	initContainerName := "init-config-reloader"
-	expectedImagePullPolicy := corev1.PullAlways
+	expectedImagePullPolicy := v1.PullAlways
 	var container = CreateConfigReloader(
 		initContainerName,
 		ReloaderConfig(reloaderConfig),
 		InitContainer(),
-		ImagePullPolicy(corev1.PullAlways),
+		ImagePullPolicy(v1.PullAlways),
 	)
 
-	assert.NotContains(t, container.Env, corev1.EnvVar{
+	assert.NotContains(t, container.Env, v1.EnvVar{
 		Name: NodeNameEnvVar,
-		ValueFrom: &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+		ValueFrom: &v1.EnvVarSource{
+			FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
 		},
 	})
 
@@ -158,7 +158,7 @@ func TestCreateConfigReloader(t *testing.T) {
 	configEnvsubstFile := "configEnvsubstFile"
 	watchedDirectories := []string{"directory1", "directory2"}
 	shard := int32(1)
-	expectedImagePullPolicy := corev1.PullAlways
+	expectedImagePullPolicy := v1.PullAlways
 	var container = CreateConfigReloader(
 		containerName,
 		ReloaderConfig(reloaderConfig),
@@ -242,42 +242,15 @@ func TestCreateConfigReloaderForDaemonSet(t *testing.T) {
 		WithDaemonSetMode(),
 	)
 
-	assert.Contains(t, container.Env, corev1.EnvVar{
+	assert.Contains(t, container.Env, v1.EnvVar{
 		Name: NodeNameEnvVar,
-		ValueFrom: &corev1.EnvVarSource{
-			FieldRef: &corev1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
+		ValueFrom: &v1.EnvVarSource{
+			FieldRef: &v1.ObjectFieldSelector{FieldPath: "spec.nodeName"},
 		},
 	})
 
-	assert.Contains(t, container.Env, corev1.EnvVar{
+	assert.Contains(t, container.Env, v1.EnvVar{
 		Name:  ShardEnvVar,
 		Value: strconv.Itoa(0),
 	})
-}
-
-func TestCreateConfigReloaderWithZone(t *testing.T) {
-	for _, tc := range []struct {
-		zone        string
-		expectEnVar bool
-	}{
-		{zone: "zone-a", expectEnVar: true},
-		{zone: "", expectEnVar: false},
-	} {
-		t.Run(tc.zone, func(t *testing.T) {
-			container := CreateConfigReloader(
-				"config-reloader",
-				ReloaderConfig(reloaderConfig),
-				Zone(tc.zone),
-			)
-
-			var found bool
-			for _, env := range container.Env {
-				if env.Name == TopologyZoneEnvVar {
-					assert.Equal(t, tc.zone, env.Value)
-					found = true
-				}
-			}
-			assert.Equal(t, tc.expectEnVar, found)
-		})
-	}
 }
