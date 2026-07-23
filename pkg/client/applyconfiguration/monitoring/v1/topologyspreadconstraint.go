@@ -26,8 +26,7 @@ import (
 // with apply.
 type TopologySpreadConstraintApplyConfiguration struct {
 	CoreV1TopologySpreadConstraintApplyConfiguration `json:",inline"`
-	// additionalLabelSelectors Defines what Prometheus Operator managed labels should be added to labelSelector on the topologySpreadConstraint.
-	AdditionalLabelSelectors *monitoringv1.AdditionalLabelSelectors `json:"additionalLabelSelectors,omitempty"`
+	AdditionalLabelSelectors                         *monitoringv1.AdditionalLabelSelectors `json:"additionalLabelSelectors,omitempty"`
 }
 
 // TopologySpreadConstraintApplyConfiguration constructs a declarative configuration of the TopologySpreadConstraint type for use with

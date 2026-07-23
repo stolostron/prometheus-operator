@@ -52,7 +52,7 @@ GOLANGCILINTER_BINARY=$(TOOLS_BIN_DIR)/golangci-lint
 MDOX_BINARY=$(TOOLS_BIN_DIR)/mdox
 API_DOC_GEN_BINARY=$(TOOLS_BIN_DIR)/gen-crd-api-reference-docs
 GOLANGCIKUBEAPILINTER_BINARY=$(TOOLS_BIN_DIR)/golangci-kube-api-linter
-TOOLING=$(CONTROLLER_GEN_BINARY) $(JB_BINARY) $(GOJSONTOYAML_BINARY) $(JSONNET_BINARY) $(JSONNETFMT_BINARY) $(SHELLCHECK_BINARY) $(PROMLINTER_BINARY) $(PROMTOOL_BINARY) $(GOLANGCILINTER_BINARY) $(MDOX_BINARY) $(API_DOC_GEN_BINARY) $(GOLANGCIKUBEAPILINTER_BINARY)
+TOOLING=$(CONTROLLER_GEN_BINARY) $(GOBINDATA_BINARY) $(JB_BINARY) $(GOJSONTOYAML_BINARY) $(JSONNET_BINARY) $(JSONNETFMT_BINARY) $(SHELLCHECK_BINARY) $(PROMLINTER_BINARY) $(PROMTOOL_BINARY) $(GOLANGCILINTER_BINARY) $(MDOX_BINARY) $(API_DOC_GEN_BINARY) $(GOLANGCIKUBEAPILINTER_BINARY)
 
 K8S_GEN_BINARIES:=informer-gen lister-gen client-gen applyconfiguration-gen
 K8S_GEN_ARGS:=--go-header-file $(shell pwd)/.header --v=1 --logtostderr
@@ -103,32 +103,28 @@ pkgs += $(shell go list $(GO_PKG)/pkg/client...)
 .PHONY: all
 all: format generate build test
 
-
-.PHONY: help
-help: ## Display this help.
-	@awk 'BEGIN { FS = ":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\n"} /^[a-zA-Z_0-9-]+:.*##/ { printf "  \033[36m%-25s\033[0m %s\n", $$1, $$2 } /^##@/ { printf "\n\033[1m%s\033[0m\n", substr($$0, 5) } ' $(MAKEFILE_LIST)
-
 .PHONY: clean
-clean: ## Remove all files and directories ignored by git.
+clean:
+	# Remove all files and directories ignored by git.
 	git clean -Xfd .
 
-##############
-##@ Building
-##############
+############
+# Building #
+############
 
 .PHONY: build
-build: operator prometheus-config-reloader admission-webhook k8s-gen ## Build all binaries.
+build: operator prometheus-config-reloader admission-webhook k8s-gen
 
 .PHONY: operator
-operator: ## Build operator binary.
+operator:
 	$(GO_BUILD_RECIPE) -o $@ ./cmd/operator/
 
 .PHONY: prometheus-config-reloader
-prometheus-config-reloader: ## Build prometheus-config-reloader binary.
+prometheus-config-reloader:
 	$(GO_BUILD_RECIPE) -o $@ ./cmd/$@/
 
 .PHONY: admission-webhook
-admission-webhook: ## Build admission-webhook binary.
+admission-webhook:
 	$(GO_BUILD_RECIPE) -o $@ ./cmd/$@/
 
 
@@ -142,7 +138,7 @@ $(DEEPCOPY_TARGETS): $(CONTROLLER_GEN_BINARY)
 		paths=.
 
 .PHONY: k8s-client-gen
-k8s-client-gen: $(K8S_GEN_DEPS) ## Generate K8s client-go libraries.
+k8s-client-gen: $(K8S_GEN_DEPS)
 	rm -rf pkg/client/{versioned,informers,listers,applyconfiguration}
 
 	@echo ">> generating pkg/client/applyconfiguration..."
@@ -181,10 +177,9 @@ k8s-client-gen: $(K8S_GEN_DEPS) ## Generate K8s client-go libraries.
 		"$(GO_PKG)/pkg/apis/monitoring/v1" "$(GO_PKG)/pkg/apis/monitoring/v1alpha1" "$(GO_PKG)/pkg/apis/monitoring/v1beta1"
 
 .PHONY: k8s-gen
-k8s-gen: $(DEEPCOPY_TARGETS) k8s-client-gen ## Generate code containing DeepCopy, DeepCopyInto, and DeepCopyObject method implementations and client-go libraries.
+k8s-gen: $(DEEPCOPY_TARGETS) k8s-client-gen
 
-.PHONY: image-builder-version
-image-builder-version: .github/env ## Update Go builder version in Dockerfiles.
+image-builder-version: .github/env
 	@echo $(GO_VERSION)
 	sed -i.bak "s/ARG GOLANG_BUILDER=.*/ARG GOLANG_BUILDER=$(GO_VERSION)/" \
 		Dockerfile && rm Dockerfile.bak
@@ -194,23 +189,23 @@ image-builder-version: .github/env ## Update Go builder version in Dockerfiles.
 		cmd/admission-webhook/Dockerfile && rm cmd/admission-webhook/Dockerfile.bak
 
 .PHONY: image
-image: GOOS := linux ## Set GOOS to linux for building docker images.
+image: GOOS := linux # Overriding GOOS value for docker image build
 image: operator-image prometheus-config-reloader-image admission-webhook-image
 
 .PHONY: operator-image
-operator-image: ## Build the operator container image.
+operator-image:
 	$(CONTAINER_CLI) build --build-arg ARCH=$(ARCH) --build-arg GOARCH=$(GOARCH) --build-arg OS=$(GOOS) -t $(IMAGE_OPERATOR):$(TAG) .
 
 .PHONY: prometheus-config-reloader-image
-prometheus-config-reloader-image: ## Build the prometheus-config-reloader container image.
+prometheus-config-reloader-image:
 	$(CONTAINER_CLI) build --build-arg ARCH=$(ARCH) --build-arg GOARCH=$(GOARCH) --build-arg OS=$(GOOS) -t $(IMAGE_RELOADER):$(TAG) -f cmd/prometheus-config-reloader/Dockerfile .
 
 .PHONY: admission-webhook-image
-admission-webhook-image: ## Build the admission-webhook container image.
+admission-webhook-image:
 	$(CONTAINER_CLI) build --build-arg ARCH=$(ARCH) --build-arg GOARCH=$(GOARCH) --build-arg OS=$(GOOS) -t $(IMAGE_WEBHOOK):$(TAG) -f cmd/admission-webhook/Dockerfile .
 
 .PHONY: update-go-deps
-update-go-deps: ## Update Go dependencies.
+update-go-deps:
 	for m in $$(go list -mod=readonly -m -f '{{ if and (not .Indirect) (not .Main)}}{{.Path}}{{end}}' all); do \
 		go get -u $$m; \
 	done
@@ -219,18 +214,18 @@ update-go-deps: ## Update Go dependencies.
 	@echo "Don't forget to run 'make tidy'"
 
 ##############
-##@ Generating
+# Generating #
 ##############
 
 .PHONY: tidy
-tidy: ## Tidy Go modules.
+tidy:
 	go mod tidy -v
 	cd pkg/apis/monitoring && go mod tidy -v -modfile=go.mod
 	cd pkg/client && go mod tidy -v -modfile=go.mod
 	cd scripts && go mod tidy -v -modfile=go.mod
 
 .PHONY: generate
-generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/thanos/thanos.yaml example/admission-webhook example/alertmanager-crd-conversion generate-docs image-builder-version ## Generate all files (CRDs, client-go libraries, docs, etc.).
+generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/thanos/thanos.yaml example/admission-webhook example/alertmanager-crd-conversion generate-docs image-builder-version
 
 # For now, the v1beta1 CRDs aren't part of the default bundle because they
 # require to deploy/run the conversion webhook.
@@ -238,7 +233,7 @@ generate: k8s-gen generate-crds bundle.yaml example/mixin/alerts.yaml example/th
 # (example/prometheus-operator-crd-full) and we generate jsonnet code that can
 # be used to patch the "default" jsonnet CRD.
 .PHONY: generate-crds
-generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET) ## Generate operator CRDs.
+generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET)
 	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) $(CRD_OPTIONS) paths=./v1/. paths=./v1alpha1/. output:crd:dir=$(PWD)/example/prometheus-operator-crd/
 	cd pkg/apis/monitoring && $(CONTROLLER_GEN_BINARY) $(CRD_OPTIONS) paths=./... output:crd:dir=$(PWD)/example/prometheus-operator-crd-full
 	VERSION=$(VERSION) ./scripts/generate/append-operator-version.sh
@@ -247,15 +242,14 @@ generate-crds: $(CONTROLLER_GEN_BINARY) $(GOJSONTOYAML_BINARY) $(TYPES_V1_TARGET
 	echo "{spec+: {versions+: $$($(GOJSONTOYAML_BINARY) -yamltojson < example/prometheus-operator-crd-full/monitoring.coreos.com_alertmanagerconfigs.yaml | jq '.spec.versions | map(select(.name == "v1beta1"))')}}" | $(JSONNETFMT_BINARY) - >> $(PWD)/jsonnet/prometheus-operator/alertmanagerconfigs-v1beta1-crd.libsonnet
 
 .PHONY: generate-tls-certs
-generate-tls-certs: ## Generate TLS certificates for testing.
+generate-tls-certs:
 	mkdir -p $(CERTS_DIR) && \
 	(cd scripts && GOOS=$(OS) GOARCH=$(GOARCH) go run -v ./certs/.)
 
 .PHONY: generate-docs
-generate-docs: ## Generate operator documentation.
-	find Documentation -type f
+generate-docs: $(shell find Documentation -type f)
 
-bundle.yaml: generate-crds $(shell find example/rbac/prometheus-operator/*.yaml -type f) ## Generate bundle.yaml.
+bundle.yaml: generate-crds $(shell find example/rbac/prometheus-operator/*.yaml -type f)
 	scripts/generate-bundle.sh
 
 # stripped-down-crds.yaml is a version of the Prometheus Operator CRDs with all
@@ -263,53 +257,53 @@ bundle.yaml: generate-crds $(shell find example/rbac/prometheus-operator/*.yaml 
 # that `kubectl apply -f ...` might fail with the full version of the CRDs
 # because of too long annotations field.
 # See https://github.com/prometheus-operator/prometheus-operator/issues/4355
-stripped-down-crds.yaml: $(shell find example/prometheus-operator-crd/*.yaml -type f) $(GOJSONTOYAML_BINARY) ## Generate stripped-down CRDs without description fields.
+stripped-down-crds.yaml: $(shell find example/prometheus-operator-crd/*.yaml -type f) $(GOJSONTOYAML_BINARY)
 	: > $@
 	for f in example/prometheus-operator-crd/*.yaml; do echo '---' >> $@; $(GOJSONTOYAML_BINARY) -yamltojson < $$f | jq 'walk(if type == "object" then with_entries(if .value|type=="object" then . else select(.key | test("description") | not) end) else . end)' | $(GOJSONTOYAML_BINARY) >> $@; done
 
-scripts/generate/vendor: $(JB_BINARY) $(shell find jsonnet/prometheus-operator -type f) ## Install jsonnet dependencies.
+scripts/generate/vendor: $(JB_BINARY) $(shell find jsonnet/prometheus-operator -type f)
 	cd scripts/generate; $(JB_BINARY) install;
 
-example/non-rbac/prometheus-operator.yaml: scripts/generate/vendor VERSION $(shell find jsonnet -type f) ## Generate non-RBAC Prometheus Operator manifests.
+example/non-rbac/prometheus-operator.yaml: scripts/generate/vendor VERSION $(shell find jsonnet -type f)
 	scripts/generate/build-non-rbac-prometheus-operator.sh
 
-example/mixin/alerts.yaml: $(JSONNET_BINARY) $(GOJSONTOYAML_BINARY) ## Generate alert rules from jsonnet mixin.
+example/mixin/alerts.yaml: $(JSONNET_BINARY) $(GOJSONTOYAML_BINARY)
 	-mkdir -p example/alerts
 	$(JSONNET_BINARY) jsonnet/mixin/alerts.jsonnet | $(GOJSONTOYAML_BINARY) > $@
 
 RBAC_MANIFESTS = example/rbac/prometheus-operator/prometheus-operator-cluster-role.yaml example/rbac/prometheus-operator/prometheus-operator-cluster-role-binding.yaml example/rbac/prometheus-operator/prometheus-operator-service-account.yaml example/rbac/prometheus-operator/prometheus-operator-deployment.yaml
-$(RBAC_MANIFESTS): scripts/generate/vendor VERSION $(shell find jsonnet -type f) ## Generate RBAC manifests.
+$(RBAC_MANIFESTS): scripts/generate/vendor VERSION $(shell find jsonnet -type f)
 	scripts/generate/build-rbac-prometheus-operator.sh
 
-example/thanos/thanos.yaml: scripts/generate/vendor scripts/generate/thanos.jsonnet $(shell find jsonnet -type f) ## Generate Thanos example manifests.
+example/thanos/thanos.yaml: scripts/generate/vendor scripts/generate/thanos.jsonnet $(shell find jsonnet -type f)
 	scripts/generate/build-thanos-example.sh
 
-example/admission-webhook: scripts/generate/vendor scripts/generate/admission-webhook.jsonnet $(shell find jsonnet -type f) ## Generate admission webhook example manifests.
+example/admission-webhook: scripts/generate/vendor scripts/generate/admission-webhook.jsonnet $(shell find jsonnet -type f)
 	scripts/generate/build-admission-webhook-example.sh
 
-example/alertmanager-crd-conversion: scripts/generate/vendor scripts/generate/conversion-webhook-patch-for-alertmanagerconfig-crd.jsonnet $(shell find jsonnet -type f) ## Generate Alertmanager CRD conversion webhook manifests.
+example/alertmanager-crd-conversion: scripts/generate/vendor scripts/generate/conversion-webhook-patch-for-alertmanagerconfig-crd.jsonnet $(shell find jsonnet -type f)
 	scripts/generate/build-conversion-webhook-patch-for-alertmanagerconfig-crd.sh
 
 FULLY_GENERATED_DOCS = Documentation/api-reference/api.md Documentation/getting-started/compatibility.md Documentation/platform/operator.md
 
-Documentation/platform/operator.md: operator ## Format operator documentation.
+Documentation/platform/operator.md: operator
 	$(MDOX_BINARY) fmt $@
 
-Documentation/getting-started/compatibility.md: pkg/operator/defaults.go ## Format compatibility documentation.
+Documentation/getting-started/compatibility.md: pkg/operator/defaults.go
 	$(MDOX_BINARY) fmt $@
 
-Documentation/api-reference/api.md: $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET) ## Generate API reference documentation.
+Documentation/api-reference/api.md: $(TYPES_V1_TARGET) $(TYPES_V1ALPHA1_TARGET) $(TYPES_V1BETA1_TARGET)
 	GODEBUG=$(GODEBUG) $(API_DOC_GEN_BINARY) -api-dir "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/" -config "$(PWD)/scripts/docs/config.json" -template-dir "$(PWD)/scripts/docs/templates" -out-file "$(PWD)/Documentation/api-reference/api.md"
 
 ##############
-##@ Formatting
+# Formatting #
 ##############
 
 .PHONY: format
-format: go-fmt jsonnet-fmt fix-license shellcheck docs ## Format all files.
+format: go-fmt jsonnet-fmt check-license shellcheck docs
 
 .PHONY: go-fmt
-go-fmt: ## Run go fmt against code.
+go-fmt:
 	gofmt -s -w .
 
 .PHONY: jsonnet-fmt
@@ -317,79 +311,73 @@ jsonnet-fmt: $(JSONNETFMT_BINARY)
 	find . -name *.jsonnet -or -name *.libsonnet -not -path "*/vendor/*" -print0 | xargs -0 $(JSONNETFMT_BINARY) -i
 
 .PHONY: check-license
-check-license: ## Check license headers.
-	@echo ">> checking license header"
-	cd scripts && go run ./check-license/ -check -root ..
-
-.PHONY: fix-license
-fix-license: ## Fix missing or non-compliant license headers.
-	@echo ">> adding license header where it's missing"
-	cd scripts && go run ./check-license/ -fix -root ..
+check-license:
+	./scripts/check_license.sh
 
 .PHONY: shellcheck
-shellcheck: $(SHELLCHECK_BINARY) ## Run shellcheck on shell scripts.
+shellcheck: $(SHELLCHECK_BINARY)
 	$(SHELLCHECK_BINARY) $(shell find . -type f -name "*.sh" -not -path "*/vendor/*")
 
 .PHONY: check-metrics
-check-metrics: $(PROMLINTER_BINARY) ## Lint Prometheus metrics.
+check-metrics: $(PROMLINTER_BINARY)
 	$(PROMLINTER_BINARY) lint .
 
 .PHONY: check
-check: check-golang check-api ## Run all checks.
+check: check-golang check-api
 
 .PHONY: check-golang
-check-golang: $(GOLANGCILINTER_BINARY) ## Run golangci-lint checks.
+check-golang: $(GOLANGCILINTER_BINARY)
 	$(GOLANGCILINTER_BINARY) run -v
 
 .PHONY: check-api
-check-api: $(GOLANGCIKUBEAPILINTER_BINARY) ## Run golangci-kube-api-linter checks on API types.
+check-api: $(GOLANGCIKUBEAPILINTER_BINARY)
 	cd pkg/apis/monitoring && $(GOLANGCIKUBEAPILINTER_BINARY) run -v --config $(ROOT_DIR)/.golangci-kal.yml
 
-.PHONY: fix
-fix: fix-golang fix-api ## Fix all auto-fixable issues.
+.PHONY: check
+fix: fix-golang fix-api
 
 .PHONY: fix-golang
-fix-golang: $(GOLANGCILINTER_BINARY) ## Run golangci-lint to fix issues.
-	$(GOLANGCILINTER_BINARY) run --fix -v
+fix-golang: $(GOLANGCILINTER_BINARY)
+	$(GOLANGCILINTER_BINARY) run --fix
 
 .PHONY: fix-api
-fix-api: $(GOLANGCIKUBEAPILINTER_BINARY) ## Run golangci-kube-api-linter to fix issues on API types.
+fix-api: $(GOLANGCIKUBEAPILINTER_BINARY)
 	cd pkg/apis/monitoring && $(GOLANGCIKUBEAPILINTER_BINARY) run -v --config $(ROOT_DIR)/.golangci-kal.yml --fix
 
 MDOX_VALIDATE_CONFIG?=.mdox.validate.yaml
 MD_FILES_TO_FORMAT=$(filter-out $(FULLY_GENERATED_DOCS), $(shell find Documentation -name "*.md")) $(filter-out ADOPTERS.md, $(shell ls *.md))
 
 .PHONY: docs
-docs: $(MDOX_BINARY) ## Format and check documentation files.
+docs: $(MDOX_BINARY)
 	@echo ">> formatting and local/remote link check"
 	GITHUB_TOKEN=$(GITHUB_TOKEN) $(MDOX_BINARY) fmt --soft-wraps -l --links.localize.address-regex="https://prometheus-operator.dev/.*" --links.validate.config-file=$(MDOX_VALIDATE_CONFIG) $(MD_FILES_TO_FORMAT)
 
 .PHONY: check-docs
-check-docs: $(MDOX_BINARY) ## Check documentation formatting and links.
+check-docs: $(MDOX_BINARY)
 	@echo ">> checking formatting and local/remote links"
 	GITHUB_TOKEN=$(GITHUB_TOKEN) $(MDOX_BINARY) fmt --soft-wraps --check -l --links.localize.address-regex="https://prometheus-operator.dev/.*" --links.validate.config-file=$(MDOX_VALIDATE_CONFIG) $(MD_FILES_TO_FORMAT)
 
 ###########
-##@ Testing
+# Testing #
 ###########
 
 .PHONY: test
-test: test-unit test-long test-e2e ## Run all tests (unit, long, and e2e).
+test: test-unit test-long test-e2e
 
 .PHONY: test-unit
-test-unit: test-prometheus-goldenfiles ## Run unit tests (short mode).
+test-unit: test-prometheus-goldenfiles
 	go test -race $(TEST_RUN_ARGS) -short $(pkgs) -count=1 -v
 
 .PHONY: test-long
-test-long: test-prometheus-goldenfiles ## Run all tests (including long-running).
+test-long: test-prometheus-goldenfiles
 	go test $(TEST_RUN_ARGS) $(pkgs) -count=1 -v
 
 .PHONY: test-unit-update-golden
-test-unit-update-golden: ## Update golden files for unit tests.
+test-unit-update-golden:
 	./scripts/update-golden-files.sh
 
 .PHONY: test-prometheus-goldenfiles
-test-prometheus-goldenfiles: $(PROMTOOL_BINARY) ## Validate Prometheus golden files.
+test-prometheus-goldenfiles: $(PROMTOOL_BINARY)
 	$(PROMTOOL_BINARY) check config --syntax-only pkg/prometheus/testdata/*.golden
 
 test/instrumented-sample-app/certs/cert.pem test/instrumented-sample-app/certs/key.pem:
@@ -400,39 +388,39 @@ $(CERTS_DIR)/ca.key $(CERTS_DIR)/ca.crt $(CERTS_DIR)/client.key $(CERTS_DIR)/cli
 
 .PHONY: test-e2e
 test-e2e: KUBECONFIG?=$(HOME)/.kube/config
-test-e2e: test/instrumented-sample-app/certs/cert.pem test/instrumented-sample-app/certs/key.pem ## Run end-to-end tests.
+test-e2e: test/instrumented-sample-app/certs/cert.pem test/instrumented-sample-app/certs/key.pem
 	go test -timeout 120m -v ./test/e2e/ $(TEST_RUN_ARGS) --kubeconfig=$(KUBECONFIG) --operator-image=$(IMAGE_OPERATOR):$(TAG) -count=1
 
 .PHONY: test-e2e-alertmanager
-test-e2e-alertmanager: ## Run e2e tests for Alertmanager.
+test-e2e-alertmanager:
 	EXCLUDE_ALERTMANAGER_TESTS= EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-prometheus
-test-e2e-prometheus: ## Run e2e tests for Prometheus.
+test-e2e-prometheus:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS= EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-prometheus-all-namespaces
-test-e2e-prometheus-all-namespaces: ## Run e2e tests for Prometheus in all namespaces.
+test-e2e-prometheus-all-namespaces:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS= EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-thanos-ruler
-test-e2e-thanos-ruler: ## Run e2e tests for Thanos Ruler.
+test-e2e-thanos-ruler:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS= EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-operator-upgrade
-test-e2e-operator-upgrade: ## Run e2e tests for operator upgrades.
+test-e2e-operator-upgrade:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS= EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-prometheus-upgrade
-test-e2e-prometheus-upgrade: ## Run e2e tests for Prometheus upgrades.
+test-e2e-prometheus-upgrade:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS=exclude EXCLUDE_PROMETHEUS_UPGRADE_TESTS= $(MAKE) test-e2e
 
 .PHONY: test-e2e-feature-gates
-test-e2e-feature-gates: ## Run e2e tests for feature gates.
+test-e2e-feature-gates:
 	EXCLUDE_ALERTMANAGER_TESTS=exclude EXCLUDE_PROMETHEUS_TESTS=exclude EXCLUDE_PROMETHEUS_ALL_NS_TESTS=exclude EXCLUDE_THANOSRULER_TESTS=exclude EXCLUDE_OPERATOR_UPGRADE_TESTS=exclude EXCLUDE_FEATURE_GATED_TESTS= EXCLUDE_PROMETHEUS_UPGRADE_TESTS=exclude $(MAKE) test-e2e
 
 .PHONY: test-e2e-images
-test-e2e-images: image $(TOOLS_BIN_DIR) ## Build and load images into kind cluster.
+test-e2e-images: image $(TOOLS_BIN_DIR)
 ifeq (podman, $(CONTAINER_CLI))
 	podman save --quiet -o $(TOOLS_BIN_DIR)/prometheus-operator.tar $(IMAGE_OPERATOR):$(TAG)
 	podman save --quiet -o $(TOOLS_BIN_DIR)/prometheus-config-reloader.tar $(IMAGE_RELOADER):$(TAG)
@@ -450,10 +438,10 @@ endif
 # Binaries #
 ############
 
-$(TOOLS_BIN_DIR): ## Create tools binary directory.
+$(TOOLS_BIN_DIR):
 	mkdir -p $(TOOLS_BIN_DIR)
 
-$(TOOLING): $(TOOLS_BIN_DIR) ## Install required tools and binaries.
+$(TOOLING): $(TOOLS_BIN_DIR)
 	@echo Installing tools from scripts/tools.go
 	@cat scripts/tools.go | grep _ | awk -F'"' '{print $$2}' | GOBIN=$(TOOLS_BIN_DIR) xargs -tI % go install -mod=readonly -modfile=scripts/go.mod %
 	@GOBIN=$(TOOLS_BIN_DIR) go install $(GO_PKG)/cmd/po-docgen

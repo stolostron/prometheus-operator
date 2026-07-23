@@ -18,10 +18,7 @@ package v1
 
 // AlertingSpecApplyConfiguration represents a declarative configuration of the AlertingSpec type for use
 // with apply.
-//
-// AlertingSpec defines parameters for alerting configuration of Prometheus servers.
 type AlertingSpecApplyConfiguration struct {
-	// alertmanagers endpoints where Prometheus should send alerts to.
 	Alertmanagers []AlertmanagerEndpointsApplyConfiguration `json:"alertmanagers,omitempty"`
 }
 

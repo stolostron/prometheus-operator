@@ -22,14 +22,9 @@ import (
 
 // StaticConfigApplyConfiguration represents a declarative configuration of the StaticConfig type for use
 // with apply.
-//
-// StaticConfig defines a Prometheus static configuration.
-// See https://prometheus.io/docs/prometheus/latest/configuration/configuration/#scrape_config
 type StaticConfigApplyConfiguration struct {
-	// targets defines the list of targets for this static configuration.
 	Targets []monitoringv1alpha1.Target `json:"targets,omitempty"`
-	// labels defines labels assigned to all metrics scraped from the targets.
-	Labels map[string]string `json:"labels,omitempty"`
+	Labels  map[string]string           `json:"labels,omitempty"`
 }
 
 // StaticConfigApplyConfiguration constructs a declarative configuration of the StaticConfig type for use with

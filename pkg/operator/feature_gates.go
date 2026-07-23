@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2024 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,9 +34,6 @@ const (
 
 	// StatusForConfigurationResourcesFeature enables the status subresource for Prometheus-Operator Config Objects.
 	StatusForConfigurationResourcesFeature FeatureGateName = "StatusForConfigurationResources"
-
-	// RemoteWriteCustomResourceDefinitionFeature enables the RemoteWrite CRD support.
-	RemoteWriteCustomResourceDefinitionFeature FeatureGateName = "RemoteWriteCustomResourceDefinition"
 )
 
 type FeatureGateName string

@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2022 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -388,7 +388,6 @@ func convertSlackConfigTo(in SlackConfig) v1alpha1.SlackConfig {
 		Actions:      convertSlackActionsTo(in.Actions),
 		HTTPConfig:   convertHTTPConfigTo(in.HTTPConfig),
 		Timeout:      in.Timeout,
-		MessageText:  in.MessageText,
 	}
 }
 
@@ -410,7 +409,6 @@ func convertWebhookConfigTo(in WebhookConfig) v1alpha1.WebhookConfig {
 		HTTPConfig:   convertHTTPConfigTo(in.HTTPConfig),
 		MaxAlerts:    in.MaxAlerts,
 		Timeout:      in.Timeout,
-		Payload:      in.Payload,
 	}
 }
 
@@ -432,28 +430,20 @@ func convertWeChatConfigTo(in WeChatConfig) v1alpha1.WeChatConfig {
 
 func convertEmailConfigTo(in EmailConfig) v1alpha1.EmailConfig {
 	return v1alpha1.EmailConfig{
-		SendResolved:     in.SendResolved,
-		To:               in.To,
-		From:             in.From,
-		Hello:            in.Hello,
-		Smarthost:        in.Smarthost,
-		AuthUsername:     in.AuthUsername,
-		AuthPassword:     convertSecretKeySelectorTo(in.AuthPassword),
-		AuthSecret:       convertSecretKeySelectorTo(in.AuthSecret),
-		AuthIdentity:     in.AuthIdentity,
-		Headers:          convertKeyValuesTo(in.Headers),
-		HTML:             in.HTML,
-		Text:             in.Text,
-		RequireTLS:       in.RequireTLS,
-		TLSConfig:        in.TLSConfig,
-		ForceImplicitTLS: in.ForceImplicitTLS,
-		Threading:        convertEmailThreadingConfigTo(in.Threading),
-	}
-}
-
-func convertEmailThreadingConfigTo(in *EmailThreadingConfig) *v1alpha1.EmailThreadingConfig {
-	return &v1alpha1.EmailThreadingConfig{
-		ThreadByDate: v1alpha1.ThreadByDateType(in.ThreadByDate),
+		SendResolved: in.SendResolved,
+		To:           in.To,
+		From:         in.From,
+		Hello:        in.Hello,
+		Smarthost:    in.Smarthost,
+		AuthUsername: in.AuthUsername,
+		AuthPassword: convertSecretKeySelectorTo(in.AuthPassword),
+		AuthSecret:   convertSecretKeySelectorTo(in.AuthSecret),
+		AuthIdentity: in.AuthIdentity,
+		Headers:      convertKeyValuesTo(in.Headers),
+		HTML:         in.HTML,
+		Text:         in.Text,
+		RequireTLS:   in.RequireTLS,
+		TLSConfig:    in.TLSConfig,
 	}
 }
 

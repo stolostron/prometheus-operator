@@ -56,7 +56,3 @@ scrape_configs:
     action: labeldrop
   - target_label: namespace
     replacement: default
-storage:
-  tsdb:
-    retention:
-      time: 24h

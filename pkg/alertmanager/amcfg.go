@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -28,10 +28,9 @@ import (
 	"github.com/blang/semver/v4"
 	"github.com/prometheus/alertmanager/config"
 	"github.com/prometheus/alertmanager/timeinterval"
-	commoncfg "github.com/prometheus/common/config"
 	"github.com/prometheus/common/model"
 	"gopkg.in/yaml.v2"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/types"
 	"k8s.io/utils/ptr"
 
@@ -409,14 +408,14 @@ func (cb *ConfigBuilder) AddAlertmanagerConfigs(ctx context.Context, amConfigs m
 	return cb.cfg.sanitize(cb.amVersion, cb.logger)
 }
 
-func (cb *ConfigBuilder) getValidURLFromSecret(ctx context.Context, namespace string, selector corev1.SecretKeySelector) (string, error) {
+func (cb *ConfigBuilder) getValidURLFromSecret(ctx context.Context, namespace string, selector v1.SecretKeySelector) (string, error) {
 	return cb.getFromSecretWithValidation(ctx, namespace, selector, func(url string) error {
 		_, err := validation.ValidateURL(url)
 		return err
 	})
 }
 
-func (cb *ConfigBuilder) getFromSecretWithValidation(ctx context.Context, namespace string, selector corev1.SecretKeySelector, validFn func(string) error) (string, error) {
+func (cb *ConfigBuilder) getFromSecretWithValidation(ctx context.Context, namespace string, selector v1.SecretKeySelector, validFn func(string) error) (string, error) {
 	url, err := cb.store.GetSecretKey(ctx, namespace, selector)
 	if err != nil {
 		return "", fmt.Errorf("failed to get URL: %w", err)
@@ -484,7 +483,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse slack API URL: %w", err)
 		}
-		out.SlackAPIURL = &commoncfg.URL{URL: u}
+		out.SlackAPIURL = &config.URL{URL: u}
 	}
 
 	if in.OpsGenieAPIURL != nil {
@@ -496,7 +495,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse OpsGenie API URL: %w", err)
 		}
-		out.OpsGenieAPIURL = &commoncfg.URL{URL: u}
+		out.OpsGenieAPIURL = &config.URL{URL: u}
 	}
 
 	if in.OpsGenieAPIKey != nil {
@@ -512,7 +511,7 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 		if err != nil {
 			return nil, fmt.Errorf("parse Pagerduty URL: %w", err)
 		}
-		out.PagerdutyURL = &commoncfg.URL{URL: u}
+		out.PagerdutyURL = &config.URL{URL: u}
 	}
 
 	if err := cb.convertGlobalTelegramConfig(out, in.TelegramConfig); err != nil {
@@ -537,10 +536,6 @@ func (cb *ConfigBuilder) convertGlobalConfig(ctx context.Context, in *monitoring
 
 	if err := cb.convertGlobalVictorOpsConfig(ctx, out, in.VictorOpsConfig, crKey); err != nil {
 		return nil, fmt.Errorf("invalid global victorops config: %w", err)
-	}
-
-	if err := cb.convertGlobalMattermostConfig(ctx, out, in.MattermostConfig, crKey); err != nil {
-		return nil, fmt.Errorf("invalid global mattermost config: %w", err)
 	}
 
 	return out, nil
@@ -919,10 +914,6 @@ func (cb *ConfigBuilder) convertWebhookConfig(ctx context.Context, in monitoring
 		}
 	}
 
-	if in.Payload != nil {
-		out.Payload = *in.Payload
-	}
-
 	return out, nil
 }
 
@@ -982,7 +973,6 @@ func (cb *ConfigBuilder) convertSlackConfig(ctx context.Context, in monitoringv1
 		IconEmoji:     ptr.Deref(in.IconEmoji, ""),
 		LinkNames:     ptr.Deref(in.LinkNames, false),
 		MrkdwnIn:      in.MrkdwnIn,
-		MessageText:   ptr.Deref(in.MessageText, ""),
 	}
 
 	if in.APIURL != nil {
@@ -1104,9 +1094,9 @@ func (cb *ConfigBuilder) convertPagerdutyConfig(ctx context.Context, in monitori
 		out.ServiceKey = serviceKey
 	}
 
-	var details map[string]any
+	var details map[string]string
 	if l := len(in.Details); l > 0 {
-		details = make(map[string]any, l)
+		details = make(map[string]string, l)
 		for _, d := range in.Details {
 			details[d.Key] = d.Value
 		}
@@ -1278,16 +1268,15 @@ func (cb *ConfigBuilder) convertWebexConfig(ctx context.Context, in monitoringv1
 
 func (cb *ConfigBuilder) convertEmailConfig(ctx context.Context, in monitoringv1alpha1.EmailConfig, crKey types.NamespacedName) (*emailConfig, error) {
 	out := &emailConfig{
-		VSendResolved:    in.SendResolved,
-		To:               ptr.Deref(in.To, ""),
-		From:             ptr.Deref(in.From, ""),
-		Hello:            ptr.Deref(in.Hello, ""),
-		AuthUsername:     ptr.Deref(in.AuthUsername, ""),
-		AuthIdentity:     ptr.Deref(in.AuthIdentity, ""),
-		HTML:             in.HTML,
-		Text:             in.Text,
-		RequireTLS:       in.RequireTLS,
-		ForceImplicitTLS: in.ForceImplicitTLS,
+		VSendResolved: in.SendResolved,
+		To:            ptr.Deref(in.To, ""),
+		From:          ptr.Deref(in.From, ""),
+		Hello:         ptr.Deref(in.Hello, ""),
+		AuthUsername:  ptr.Deref(in.AuthUsername, ""),
+		AuthIdentity:  ptr.Deref(in.AuthIdentity, ""),
+		HTML:          in.HTML,
+		Text:          in.Text,
+		RequireTLS:    in.RequireTLS,
 	}
 
 	if ptr.Deref(in.Smarthost, "") == "" {
@@ -1303,12 +1292,7 @@ func (cb *ConfigBuilder) convertEmailConfig(ctx context.Context, in monitoringv1
 	}
 
 	if ptr.Deref(in.Smarthost, "") != "" {
-		host, port, err := net.SplitHostPort(*in.Smarthost)
-		if err != nil {
-			return nil, fmt.Errorf("invalid SMTP smarthost %q: %w", *in.Smarthost, err)
-		}
-		out.Smarthost.Host = host
-		out.Smarthost.Port = port
+		out.Smarthost.Host, out.Smarthost.Port, _ = net.SplitHostPort(*in.Smarthost)
 	}
 
 	if in.AuthPassword != nil {
@@ -1337,18 +1321,6 @@ func (cb *ConfigBuilder) convertEmailConfig(ctx context.Context, in monitoringv1
 
 	if in.TLSConfig != nil {
 		out.TLSConfig = cb.convertTLSConfig(in.TLSConfig, crKey)
-	}
-
-	if t := in.Threading; t != nil {
-		out.Threading = &emailThreadingConfig{
-			Enabled: new(true),
-		}
-		switch t.ThreadByDate {
-		case "Daily":
-			out.Threading.ThreadByDate = "daily"
-		case "None":
-			out.Threading.ThreadByDate = "none"
-		}
 	}
 
 	return out, nil
@@ -1484,9 +1456,8 @@ func (cb *ConfigBuilder) convertTelegramConfig(ctx context.Context, in monitorin
 		VSendResolved:        in.SendResolved,
 		ChatID:               in.ChatID,
 		Message:              in.Message,
-		DisableNotifications: ptr.Deref(in.DisableNotifications, false),
+		DisableNotifications: false,
 		ParseMode:            in.ParseMode,
-		BotTokenFile:         ptr.Deref(in.BotTokenFile, ""),
 	}
 
 	if in.APIURL != nil {
@@ -1558,10 +1529,6 @@ func (cb *ConfigBuilder) convertSnsConfig(ctx context.Context, in monitoringv1al
 			Region:  in.Sigv4.Region,
 			Profile: in.Sigv4.Profile,
 			RoleARN: in.Sigv4.RoleArn,
-		}
-
-		if cb.amVersion.GTE(semver.MustParse("0.33.0")) {
-			out.Sigv4.ExternalID = in.Sigv4.ExternalID
 		}
 
 		if in.Sigv4.AccessKey != nil && in.Sigv4.SecretKey != nil {
@@ -1790,9 +1757,6 @@ func (cb *ConfigBuilder) convertSMTPConfig(ctx context.Context, out *globalConfi
 	if in.AuthIdentity != nil {
 		out.SMTPAuthIdentity = *in.AuthIdentity
 	}
-	if in.ForceImplicitTLS != nil {
-		out.SMTPForceImplicitTLS = in.ForceImplicitTLS
-	}
 	out.SMTPRequireTLS = in.RequireTLS
 
 	if in.SmartHost != nil {
@@ -1910,7 +1874,7 @@ func (cb *ConfigBuilder) convertHTTPConfig(ctx context.Context, in *monitoringv1
 			ClientID:       clientID,
 			ClientSecret:   clientSecret,
 			Scopes:         in.OAuth2.Scopes,
-			TokenURL:       string(in.OAuth2.TokenURL),
+			TokenURL:       in.OAuth2.TokenURL,
 			EndpointParams: in.OAuth2.EndpointParams,
 			proxyConfig:    proxyConfig,
 		}
@@ -1998,7 +1962,7 @@ func (cb *ConfigBuilder) convertGlobalTelegramConfig(out *globalConfig, in *moni
 		if err != nil {
 			return fmt.Errorf("failed to parse Telegram API URL: %w", err)
 		}
-		out.TelegramAPIURL = &commoncfg.URL{URL: u}
+		out.TelegramAPIURL = &config.URL{URL: u}
 	}
 
 	return nil
@@ -2014,7 +1978,7 @@ func (cb *ConfigBuilder) convertGlobalJiraConfig(out *globalConfig, in *monitori
 		if err != nil {
 			return fmt.Errorf("failed to parse Jira API URL: %w", err)
 		}
-		out.JiraAPIURL = &commoncfg.URL{URL: u}
+		out.JiraAPIURL = &config.URL{URL: u}
 	}
 
 	return nil
@@ -2030,7 +1994,7 @@ func (cb *ConfigBuilder) convertGlobalRocketChatConfig(ctx context.Context, out 
 		if err != nil {
 			return fmt.Errorf("failed to parse Rocket Chat API URL: %w", err)
 		}
-		out.RocketChatAPIURL = &commoncfg.URL{URL: u}
+		out.RocketChatAPIURL = &config.URL{URL: u}
 	}
 
 	if in.Token != nil {
@@ -2062,7 +2026,7 @@ func (cb *ConfigBuilder) convertGlobalWebexConfig(out *globalConfig, in *monitor
 		if err != nil {
 			return fmt.Errorf("parse Webex API URL: %w", err)
 		}
-		out.WebexAPIURL = &commoncfg.URL{URL: u}
+		out.WebexAPIURL = &config.URL{URL: u}
 	}
 
 	return nil
@@ -2078,7 +2042,7 @@ func (cb *ConfigBuilder) convertGlobalWeChatConfig(ctx context.Context, out *glo
 		if err != nil {
 			return fmt.Errorf("wechat API URL: %w", err)
 		}
-		out.WeChatAPIURL = &commoncfg.URL{URL: u}
+		out.WeChatAPIURL = &config.URL{URL: u}
 	}
 
 	if in.APISecret != nil {
@@ -2106,7 +2070,7 @@ func (cb *ConfigBuilder) convertGlobalVictorOpsConfig(ctx context.Context, out *
 		if err != nil {
 			return fmt.Errorf("failed to parse VictorOps API URL: %w", err)
 		}
-		out.VictorOpsAPIURL = &commoncfg.URL{URL: u}
+		out.VictorOpsAPIURL = &config.URL{URL: u}
 	}
 
 	if in.APIKey != nil {
@@ -2115,26 +2079,6 @@ func (cb *ConfigBuilder) convertGlobalVictorOpsConfig(ctx context.Context, out *
 			return fmt.Errorf("failed to get VictorOps Secret: %w", err)
 		}
 		out.VictorOpsAPIKey = apiSecret
-	}
-
-	return nil
-}
-
-func (cb *ConfigBuilder) convertGlobalMattermostConfig(ctx context.Context, out *globalConfig, in *monitoringv1.GlobalMattermostConfig, crKey types.NamespacedName) error {
-	if in == nil {
-		return nil
-	}
-
-	if in.WebhookURL != nil {
-		webhookURLStr, err := cb.store.GetSecretKey(ctx, crKey.Namespace, *in.WebhookURL)
-		if err != nil {
-			return fmt.Errorf("failed to get Mattermost Webhook URL Secret: %w", err)
-		}
-		u, err := url.Parse(webhookURLStr)
-		if err != nil {
-			return fmt.Errorf("failed to parse Webhook URL: %w", err)
-		}
-		out.MattermostWebhookURL = &commoncfg.URL{URL: u}
 	}
 
 	return nil
@@ -2284,72 +2228,6 @@ func (gc *globalConfig) sanitize(amVersion semver.Version, logger *slog.Logger) 
 		msg := "'victorops_api_key' and 'victorops_api_key_file' are mutually exclusive - 'victorops_api_key' has taken precedence"
 		logger.Warn(msg)
 		gc.VictorOpsAPIKeyFile = ""
-	}
-
-	if gc.WeChatAPISecretFile != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'wechat_api_secret_file' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.WeChatAPISecretFile = ""
-	}
-
-	if gc.WeChatAPISecret != "" && gc.WeChatAPISecretFile != "" {
-		msg := "'wechat_api_secret' and 'wechat_api_secret_file' are mutually exclusive - 'wechat_api_secret' has taken precedence"
-		logger.Warn(msg)
-		gc.WeChatAPISecretFile = ""
-	}
-
-	if gc.TelegramBotToken != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'telegram_bot_token' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.TelegramBotToken = ""
-	}
-
-	if gc.TelegramBotTokenFile != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'telegram_bot_token_file' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.TelegramBotTokenFile = ""
-	}
-
-	if gc.TelegramBotToken != "" && gc.TelegramBotTokenFile != "" {
-		msg := "'telegram_bot_token' and 'telegram_bot_token_file' are mutually exclusive - 'telegram_bot_token' has taken precedence"
-		logger.Warn(msg)
-		gc.TelegramBotTokenFile = ""
-	}
-
-	if gc.SMTPAuthSecretFile != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'smtp_auth_secret_file' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.SMTPAuthSecretFile = ""
-	}
-
-	if gc.SMTPAuthSecret != "" && gc.SMTPAuthSecretFile != "" {
-		msg := "'smtp_auth_secret' and 'smtp_auth_secret_file' are mutually exclusive - 'smtp_auth_secret' has taken precedence"
-		logger.Warn(msg)
-		gc.SMTPAuthSecretFile = ""
-	}
-
-	if gc.SMTPForceImplicitTLS != nil && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'smtp_force_implicit_tls' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.SMTPForceImplicitTLS = nil
-	}
-
-	if gc.MattermostWebhookURL != nil && amVersion.LT(semver.MustParse("0.32.0")) {
-		msg := "'mattermost_webhook_url' supported in Alertmanager >= 0.32.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.MattermostWebhookURL = nil
-	}
-
-	if gc.MattermostWebhookURLFile != "" && amVersion.LT(semver.MustParse("0.32.0")) {
-		msg := "'mattermost_webhook_url_file' supported in Alertmanager >= 0.32.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		gc.MattermostWebhookURLFile = ""
-	}
-
-	if gc.MattermostWebhookURL != nil && gc.MattermostWebhookURLFile != "" {
-		msg := "'mattermost_webhook_url' and 'mattermost_webhook_url_file' are mutually exclusive - 'mattermost_webhook_url' has taken precedence"
-		logger.Warn(msg)
-		gc.MattermostWebhookURLFile = ""
 	}
 
 	return nil
@@ -2626,12 +2504,6 @@ func (r *receiver) sanitize(amVersion semver.Version, logger *slog.Logger) error
 		}
 	}
 
-	for _, conf := range r.PagerdutyConfigs {
-		if err := conf.sanitize(amVersion, withLogger); err != nil {
-			return err
-		}
-	}
-
 	return nil
 }
 
@@ -2645,35 +2517,6 @@ func (ec *emailConfig) sanitize(amVersion semver.Version, logger *slog.Logger) e
 	if ec.AuthPassword != "" && ec.AuthPasswordFile != "" {
 		logger.Warn("'auth_password' and 'auth_password_file' are mutually exclusive for email receiver config - 'auth_password' has taken precedence")
 		ec.AuthPasswordFile = ""
-	}
-
-	if ec.ForceImplicitTLS != nil && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'force_implicit_tls' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		ec.ForceImplicitTLS = nil
-	}
-
-	if ec.AuthSecretFile != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'auth_secret_file' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		ec.AuthSecretFile = ""
-	}
-
-	if ec.AuthSecret != "" && ec.AuthSecretFile != "" {
-		logger.Warn("'auth_secret' and 'auth_secret_file' are mutually exclusive for email receiver config - 'auth_secret' has taken precedence")
-		ec.AuthSecretFile = ""
-	}
-
-	if ec.Threading != nil && amVersion.LT(semver.MustParse("0.30.0")) {
-		msg := "'threading' supported in Alertmanager >= 0.30.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		ec.Threading = nil
-	}
-
-	if t := ec.Threading; t != nil {
-		if t.ThreadByDate != "daily" && t.ThreadByDate != "none" {
-			return fmt.Errorf("invalid 'thread_by_date': the value must be empty, 'daily' or 'none'")
-		}
 	}
 
 	return nil
@@ -2779,14 +2622,6 @@ func (pdc *pagerdutyConfig) sanitize(amVersion semver.Version, logger *slog.Logg
 		pdc.Timeout = nil
 	}
 
-	if lessThanV0_30 {
-		for _, v := range pdc.Details {
-			if _, ok := v.(string); !ok {
-				return fmt.Errorf("'details' value in non-string format is supported in Alertmanager >= 0.30.0 only")
-			}
-		}
-	}
-
 	return pdc.HTTPConfig.sanitize(amVersion, logger)
 }
 
@@ -2860,8 +2695,6 @@ func (poc *pushoverConfig) sanitize(amVersion semver.Version, logger *slog.Logge
 
 func (sc *slackConfig) sanitize(amVersion semver.Version, logger *slog.Logger) error {
 	lessThanV0_30 := amVersion.LT(semver.MustParse("0.30.0"))
-	lessThanV0_31 := amVersion.LT(semver.MustParse("0.31.0"))
-	lessThanV0_32 := amVersion.LT(semver.MustParse("0.32.0"))
 
 	if err := sc.HTTPConfig.sanitize(amVersion, logger); err != nil {
 		return err
@@ -2889,24 +2722,6 @@ func (sc *slackConfig) sanitize(amVersion semver.Version, logger *slog.Logger) e
 		msg := "'app_url' supported in Alertmanager >= 0.30.0 only - dropping field from provided config"
 		logger.Warn(msg, "current_version", amVersion.String())
 		sc.AppURL = ""
-	}
-
-	if sc.MessageText != "" && lessThanV0_31 {
-		msg := "'message_text' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		sc.MessageText = ""
-	}
-
-	if sc.UpdateMessage != nil {
-		if lessThanV0_32 {
-			msg := "'update_message' supported in Alertmanager >= 0.32.0 only - dropping field from provided config"
-			logger.Warn(msg)
-			sc.UpdateMessage = nil
-		} else if *sc.UpdateMessage && sc.APIURL != "" {
-			if sc.APIURL != "https://slack.com/api/chat.postMessage" {
-				return fmt.Errorf(`update_message' can only be used with bot tokens. api_url must be set to https://slack.com/api/chat.postMessage`)
-			}
-		}
 	}
 
 	if sc.AppToken != "" && sc.AppTokenFile != "" {
@@ -2989,12 +2804,6 @@ func (whc *webhookConfig) sanitize(amVersion semver.Version, logger *slog.Logger
 		whc.Timeout = nil
 	}
 
-	if whc.Payload != nil && amVersion.LT(semver.MustParse("0.32.0")) {
-		msg := "'payload' supported in Alertmanager >= 0.32.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		whc.Payload = nil
-	}
-
 	if whc.URL != "" {
 		if err := validation.ValidateTemplateURL(whc.URL); err != nil {
 			return fmt.Errorf("invalid 'url': %w", err)
@@ -3040,12 +2849,6 @@ func (tc *msTeamsV2Config) sanitize(amVersion semver.Version, logger *slog.Logge
 		return errors.New("both webhook_url and webhook_url_file cannot be set at the same time")
 	}
 
-	if tc.WebhookURL != "" {
-		if _, err := validation.ValidateURL(tc.WebhookURL); err != nil {
-			return fmt.Errorf("invalid 'webhook_url': %w", err)
-		}
-	}
-
 	return tc.HTTPConfig.sanitize(amVersion, logger)
 }
 
@@ -3054,18 +2857,6 @@ func (wcc *weChatConfig) sanitize(amVersion semver.Version, logger *slog.Logger)
 		if _, err := validation.ValidateURL(wcc.APIURL); err != nil {
 			return fmt.Errorf("invalid 'api_url': %w", err)
 		}
-	}
-
-	if wcc.APISecretFile != "" && amVersion.LT(semver.MustParse("0.31.0")) {
-		msg := "'api_secret_file' supported in Alertmanager >= 0.31.0 only - dropping field `api_secret_file` from wechat config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		wcc.APISecretFile = ""
-	}
-
-	if wcc.APISecret != "" && wcc.APISecretFile != "" {
-		msg := "'api_secret' and 'api_secret_file' are mutually exclusive for telegram receiver config - 'api_secret' has taken precedence"
-		logger.Warn(msg)
-		wcc.APISecretFile = ""
 	}
 
 	return wcc.HTTPConfig.sanitize(amVersion, logger)
@@ -3078,43 +2869,19 @@ func (sc *snsConfig) sanitize(amVersion semver.Version, logger *slog.Logger) err
 		}
 	}
 
-	if sc.Sigv4.ExternalID != "" {
-		if sc.Sigv4.RoleARN == "" {
-			return fmt.Errorf("'external_id' in sigv4 config requires 'role_arn' to be set")
-		}
-		if amVersion.LT(semver.MustParse("0.33.0")) {
-			msg := "'external_id' supported in Alertmanager >= 0.33.0 only - dropping field `external_id` from sigv4 config"
-			logger.Warn(msg)
-			sc.Sigv4.ExternalID = ""
-		}
-	}
-
 	return sc.HTTPConfig.sanitize(amVersion, logger)
 }
 
 func (tc *telegramConfig) sanitize(amVersion semver.Version, logger *slog.Logger) error {
 	lessThanV0_26 := amVersion.LT(semver.MustParse("0.26.0"))
 	telegramAllowed := amVersion.GTE(semver.MustParse("0.24.0"))
-	lessThanV0_31 := amVersion.LT(semver.MustParse("0.31.0"))
 
 	if !telegramAllowed {
 		return fmt.Errorf(`invalid syntax in receivers config; telegram integration is available in Alertmanager >= 0.24.0`)
 	}
 
-	if tc.ChatIDFile != "" && lessThanV0_31 {
-		msg := "'chat_id_file' supported in Alertmanager >= 0.31.0 only - dropping field from provided config"
-		logger.Warn(msg, "current_version", amVersion.String())
-		tc.ChatIDFile = ""
-	}
-
-	if tc.ChatID == 0 && tc.ChatIDFile == "" {
-		return fmt.Errorf("missing mandatory field chat_id or chat_id_file")
-	}
-
-	if tc.ChatID != 0 && tc.ChatIDFile != "" {
-		msg := "'chat_id' and 'chat_id_file' are mutually exclusive for telegram receiver config - 'chat_id' has taken precedence"
-		logger.Warn(msg)
-		tc.ChatIDFile = ""
+	if tc.ChatID == 0 {
+		return fmt.Errorf("mandatory field %q is empty", "chatID")
 	}
 
 	if tc.BotTokenFile != "" && lessThanV0_26 {
@@ -3123,14 +2890,14 @@ func (tc *telegramConfig) sanitize(amVersion semver.Version, logger *slog.Logger
 		tc.BotTokenFile = ""
 	}
 
+	if tc.BotToken == "" && tc.BotTokenFile == "" {
+		return fmt.Errorf("missing mandatory field botToken or botTokenFile")
+	}
+
 	if tc.BotToken != "" && tc.BotTokenFile != "" {
 		msg := "'bot_token' and 'bot_token_file' are mutually exclusive for telegram receiver config - 'bot_token' has taken precedence"
 		logger.Warn(msg)
 		tc.BotTokenFile = ""
-	}
-
-	if tc.BotToken == "" && tc.BotTokenFile == "" && lessThanV0_31 {
-		return fmt.Errorf("missing mandatory field botToken or botTokenFile")
 	}
 
 	if tc.MessageThreadID != 0 && lessThanV0_26 {
@@ -3248,12 +3015,11 @@ func (rc *rocketChatConfig) sanitize(amVersion semver.Version, logger *slog.Logg
 
 func (mc *mattermostConfig) sanitize(amVersion semver.Version, logger *slog.Logger) error {
 	mattermostAllowed := amVersion.GTE(semver.MustParse("0.30.0"))
-	lessThanV0_32 := amVersion.LT(semver.MustParse("0.32.0"))
 	if !mattermostAllowed {
 		return fmt.Errorf(`invalid syntax in receivers config; mattermost integration is available in Alertmanager >= 0.30.0`)
 	}
 
-	if mc.WebhookURL == "" && mc.WebhookURLFile == "" && lessThanV0_32 {
+	if mc.WebhookURL == "" && mc.WebhookURLFile == "" {
 		return fmt.Errorf(`one of 'webhook_url' or 'webhook_url_file' must be configured`)
 	}
 
@@ -3261,38 +3027,6 @@ func (mc *mattermostConfig) sanitize(amVersion semver.Version, logger *slog.Logg
 		msg := "'webhook_url' and 'webhook_url_file' are mutually exclusive for mattermost receiver config - 'webhook_url' has taken precedence"
 		logger.Warn(msg)
 		mc.WebhookURLFile = ""
-	}
-
-	// check the attachment top level fields and reject if below 0.32.0.
-	if amVersion.LT(semver.MustParse("0.32.0")) {
-		commonErrorMsg := " supported in Alertmanager >= 0.32.0 only - dropping field from provided config"
-		fieldNameMapping := map[string]*string{
-			"fallback":    &mc.Fallback,
-			"color":       &mc.Color,
-			"pretext":     &mc.Pretext,
-			"author_name": &mc.AuthorName,
-			"author_link": &mc.AuthorLink,
-			"author_icon": &mc.AuthorIcon,
-			"title":       &mc.Title,
-			"title_link":  &mc.TitleLink,
-			"thumb_url":   &mc.ThumbURL,
-			"footer":      &mc.Footer,
-			"footer_icon": &mc.FooterIcon,
-			"image_urL":   &mc.ImageURL,
-		}
-		for fieldName, valuePtr := range fieldNameMapping {
-			if *valuePtr != "" {
-				msg := fmt.Sprintf("'%s'"+commonErrorMsg, fieldName)
-				logger.Warn(msg, "current_version", amVersion.String())
-				*valuePtr = ""
-			}
-		}
-
-		if len(mc.Fields) > 0 {
-			msg := "'fields'" + commonErrorMsg
-			logger.Warn(msg, "current_version", amVersion.String())
-			mc.Fields = nil
-		}
 	}
 
 	return mc.HTTPConfig.sanitize(amVersion, logger)
@@ -3547,10 +3281,6 @@ func (cb *ConfigBuilder) checkAlertmanagerGlobalConfigResource(
 	// Perform more specific validations which depend on the Alertmanager
 	// version. It also retrieves data from referenced secrets and configmaps
 	// (and fails in case of missing/invalid references).
-	if err := cb.checkGlobalSMTPConfig(gc.SMTPConfig); err != nil {
-		return err
-	}
-
 	if err := cb.checkGlobalTelegramConfig(gc.TelegramConfig); err != nil {
 		return err
 	}
@@ -3573,22 +3303,6 @@ func (cb *ConfigBuilder) checkAlertmanagerGlobalConfigResource(
 
 	if err := cb.checkGlobalWeChatConfig(ctx, gc.WeChatConfig, namespace); err != nil {
 		return err
-	}
-
-	if err := cb.checkGlobalMattermostConfig(ctx, gc.MattermostConfig, namespace); err != nil {
-		return err
-	}
-
-	return nil
-}
-
-func (cb *ConfigBuilder) checkGlobalSMTPConfig(sc *monitoringv1.GlobalSMTPConfig) error {
-	if sc == nil {
-		return nil
-	}
-
-	if sc.ForceImplicitTLS != nil && cb.amVersion.LT(semver.MustParse("0.31.0")) {
-		return fmt.Errorf(`'forceImplicitTLS' integration requires Alertmanager >= 0.31.0 - current %s`, cb.amVersion)
 	}
 
 	return nil
@@ -3688,32 +3402,6 @@ func (cb *ConfigBuilder) checkGlobalWeChatConfig(
 	if wc.APISecret != nil {
 		if _, err := cb.store.GetSecretKey(ctx, namespace, *wc.APISecret); err != nil {
 			return err
-		}
-	}
-
-	return nil
-}
-
-func (cb *ConfigBuilder) checkGlobalMattermostConfig(
-	ctx context.Context,
-	mc *monitoringv1.GlobalMattermostConfig,
-	namespace string,
-) error {
-	if mc == nil {
-		return nil
-	}
-
-	if cb.amVersion.LT(semver.MustParse("0.32.0")) {
-		return fmt.Errorf(`'mattermost' global parameters require Alertmanager >= 0.32.0 - current %s`, cb.amVersion)
-	}
-
-	if mc.WebhookURL != nil {
-		url, err := cb.store.GetSecretKey(ctx, namespace, *mc.WebhookURL)
-		if err != nil {
-			return fmt.Errorf("failed to retrieve Mattermost Webhook URL: %w", err)
-		}
-		if err := validation.ValidateSecretURL(strings.TrimSpace(url)); err != nil {
-			return fmt.Errorf("failed to validate Mattermost Webhook URL: %w", err)
 		}
 	}
 

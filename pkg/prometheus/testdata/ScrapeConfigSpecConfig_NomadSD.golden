@@ -16,7 +16,7 @@ scrape_configs:
     proxy_connect_header:
       header:
       - value
-    server: http://127.0.0.1:4646
+    server: 127.0.0.1
     allow_stale: true
     namespace: default
     refresh_interval: 30s
@@ -28,7 +28,3 @@ scrape_configs:
   - source_labels:
     - job
     target_label: __tmp_prometheus_job_name
-storage:
-  tsdb:
-    retention:
-      time: 24h

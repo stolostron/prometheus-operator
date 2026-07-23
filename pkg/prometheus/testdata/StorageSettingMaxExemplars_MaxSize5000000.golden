@@ -8,6 +8,3 @@ scrape_configs: []
 storage:
   exemplars:
     max_exemplars: 5000000
-  tsdb:
-    retention:
-      time: 24h

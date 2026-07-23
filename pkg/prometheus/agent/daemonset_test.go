@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2023 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -23,6 +23,7 @@ import (
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	monitoringv1alpha1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1alpha1"
@@ -133,20 +134,6 @@ func TestAutomountServiceAccountTokenForDaemonSet(t *testing.T) {
 	}
 }
 
-func TestSchedulerNameForDaemonSet(t *testing.T) {
-	schedulerName := "my-scheduler"
-
-	dset, err := makeDaemonSetFromPrometheus(monitoringv1alpha1.PrometheusAgent{
-		Spec: monitoringv1alpha1.PrometheusAgentSpec{
-			CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
-				SchedulerName: schedulerName,
-			},
-		},
-	})
-	require.NoError(t, err)
-	require.Equal(t, schedulerName, dset.Spec.Template.Spec.SchedulerName)
-}
-
 func TestDaemonSetLabelingAndAnnotations(t *testing.T) {
 	labels := map[string]string{
 		"testlabel": "testlabelvalue",
@@ -199,8 +186,8 @@ func TestDaemonSetenableServiceLinks(t *testing.T) {
 		enableServiceLinks         *bool
 		expectedEnableServiceLinks *bool
 	}{
-		{enableServiceLinks: new(false), expectedEnableServiceLinks: new(false)},
-		{enableServiceLinks: new(true), expectedEnableServiceLinks: new(true)},
+		{enableServiceLinks: ptr.To(false), expectedEnableServiceLinks: ptr.To(false)},
+		{enableServiceLinks: ptr.To(true), expectedEnableServiceLinks: ptr.To(true)},
 		{enableServiceLinks: nil, expectedEnableServiceLinks: nil},
 	}
 
@@ -228,10 +215,10 @@ func TestHostUsersForDaemonSet(t *testing.T) {
 		hostUsers *bool
 	}{
 		{
-			hostUsers: new(true),
+			hostUsers: ptr.To(true),
 		},
 		{
-			hostUsers: new(false),
+			hostUsers: ptr.To(false),
 		},
 	} {
 		t.Run("", func(t *testing.T) {

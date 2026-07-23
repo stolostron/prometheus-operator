@@ -18,12 +18,8 @@ package v1
 
 // ProbeParamApplyConfiguration represents a declarative configuration of the ProbeParam type for use
 // with apply.
-//
-// ProbeParam defines specification of extra parameters for a Probe.
 type ProbeParamApplyConfiguration struct {
-	// name defines the parameter name
-	Name *string `json:"name,omitempty"`
-	// values defines the parameter values
+	Name   *string  `json:"name,omitempty"`
 	Values []string `json:"values,omitempty"`
 }
 

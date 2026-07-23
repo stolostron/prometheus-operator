@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,7 @@ import (
 	"fmt"
 	"time"
 
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/fields"
 	"k8s.io/apimachinery/pkg/runtime/schema"
@@ -96,7 +96,7 @@ func (f *Framework) PatchThanosRuler(ctx context.Context, name, ns string, spec 
 		types.ApplyPatchType,
 		b,
 		metav1.PatchOptions{
-			Force:        new(true),
+			Force:        ptr.To(true),
 			FieldManager: "e2e-test",
 		},
 	)
@@ -114,7 +114,7 @@ func (f *Framework) UpdateThanosRulerReplicasAndWaitUntilReady(ctx context.Conte
 		name,
 		ns,
 		monitoringv1.ThanosRulerSpec{
-			Replicas: new(replicas),
+			Replicas: ptr.To(replicas),
 		},
 	)
 }
@@ -144,17 +144,17 @@ func (f *Framework) WaitForThanosRulerReady(ctx context.Context, ns string, tr *
 	return nil
 }
 
-func (f *Framework) MakeThanosRulerService(name, group string, serviceType corev1.ServiceType) *corev1.Service {
-	service := &corev1.Service{
+func (f *Framework) MakeThanosRulerService(name, group string, serviceType v1.ServiceType) *v1.Service {
+	service := &v1.Service{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: fmt.Sprintf("thanos-ruler-%s", name),
 			Labels: map[string]string{
 				"group": group,
 			},
 		},
-		Spec: corev1.ServiceSpec{
+		Spec: v1.ServiceSpec{
 			Type: serviceType,
-			Ports: []corev1.ServicePort{
+			Ports: []v1.ServicePort{
 				{
 					Name:       "web",
 					Port:       9090,

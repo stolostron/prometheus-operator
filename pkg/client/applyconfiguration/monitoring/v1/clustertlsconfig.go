@@ -18,12 +18,8 @@ package v1
 
 // ClusterTLSConfigApplyConfiguration represents a declarative configuration of the ClusterTLSConfig type for use
 // with apply.
-//
-// ClusterTLSConfig defines the mutual TLS configuration for the Alertmanager cluster TLS protocol.
 type ClusterTLSConfigApplyConfiguration struct {
-	// server defines the server-side configuration for mutual TLS.
-	ServerTLS *WebTLSConfigApplyConfiguration `json:"server,omitempty"`
-	// client defines the client-side configuration for mutual TLS.
+	ServerTLS *WebTLSConfigApplyConfiguration  `json:"server,omitempty"`
 	ClientTLS *SafeTLSConfigApplyConfiguration `json:"client,omitempty"`
 }
 

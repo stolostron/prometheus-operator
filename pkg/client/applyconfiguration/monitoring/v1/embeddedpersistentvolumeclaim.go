@@ -23,19 +23,11 @@ import (
 
 // EmbeddedPersistentVolumeClaimApplyConfiguration represents a declarative configuration of the EmbeddedPersistentVolumeClaim type for use
 // with apply.
-//
-// EmbeddedPersistentVolumeClaim is an embedded version of k8s.io/api/core/v1.PersistentVolumeClaim.
-// It contains TypeMeta and a reduced ObjectMeta.
 type EmbeddedPersistentVolumeClaimApplyConfiguration struct {
-	// TypeMeta defines the versioned schema of this representation of an object.
-	metav1.TypeMetaApplyConfiguration `json:",inline"`
-	// metadata defines EmbeddedMetadata contains metadata relevant to an EmbeddedResource.
+	metav1.TypeMetaApplyConfiguration         `json:",inline"`
 	*EmbeddedObjectMetadataApplyConfiguration `json:"metadata,omitempty"`
-	// spec defines the specification of the  characteristics of a volume requested by a pod author.
-	// More info: https://kubernetes.io/docs/concepts/storage/persistent-volumes#persistentvolumeclaims
-	Spec *corev1.PersistentVolumeClaimSpec `json:"spec,omitempty"`
-	// status is deprecated: this field is never set.
-	Status *corev1.PersistentVolumeClaimStatus `json:"status,omitempty"`
+	Spec                                      *corev1.PersistentVolumeClaimSpec   `json:"spec,omitempty"`
+	Status                                    *corev1.PersistentVolumeClaimStatus `json:"status,omitempty"`
 }
 
 // EmbeddedPersistentVolumeClaimApplyConfiguration constructs a declarative configuration of the EmbeddedPersistentVolumeClaim type for use with
@@ -46,7 +38,6 @@ func EmbeddedPersistentVolumeClaim() *EmbeddedPersistentVolumeClaimApplyConfigur
 	b.WithAPIVersion("monitoring.coreos.com/v1")
 	return b
 }
-
 func (b EmbeddedPersistentVolumeClaimApplyConfiguration) IsApplyConfiguration() {}
 
 // WithKind sets the Kind field in the declarative configuration to the given value

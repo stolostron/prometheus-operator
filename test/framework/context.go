@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2017 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -21,7 +21,6 @@ import (
 	"io"
 	"os"
 	"path/filepath"
-	"slices"
 	"strconv"
 	"strings"
 	"testing"
@@ -571,8 +570,8 @@ func (ctx *TestCtx) Cleanup(t *testing.T) {
 	t.Helper()
 	var eg errgroup.Group
 
-	for _, v := range slices.Backward(ctx.cleanUpFns) {
-		eg.Go(v)
+	for i := len(ctx.cleanUpFns) - 1; i >= 0; i-- {
+		eg.Go(ctx.cleanUpFns[i])
 	}
 
 	if err := eg.Wait(); err != nil {

@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2025 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -19,6 +19,7 @@ import (
 
 	"github.com/prometheus/prometheus/model/relabel"
 	"github.com/stretchr/testify/require"
+	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -116,7 +117,7 @@ func TestValidateRelabelConfig(t *testing.T) {
 			scenario: "replacement set for uppercase action",
 			relabelConfig: monitoringv1.RelabelConfig{
 				Action:      "uppercase",
-				Replacement: new("some-replace-value"),
+				Replacement: ptr.To("some-replace-value"),
 			},
 			prometheus:  defaultPrometheusSpec,
 			expectedErr: true,
@@ -139,7 +140,7 @@ func TestValidateRelabelConfig(t *testing.T) {
 			relabelConfig: monitoringv1.RelabelConfig{
 				Action:      "labelmap",
 				Regex:       "__meta_kubernetes_service_label_(.+)",
-				Replacement: new("some-name-value"),
+				Replacement: ptr.To("some-name-value"),
 			},
 			prometheus:  defaultPrometheusSpec,
 			expectedErr: true,
@@ -159,7 +160,7 @@ func TestValidateRelabelConfig(t *testing.T) {
 			relabelConfig: monitoringv1.RelabelConfig{
 				Action:      "labelmap",
 				Regex:       "__meta_kubernetes_service_label_(.+)",
-				Replacement: new("abc"),
+				Replacement: ptr.To("abc"),
 			},
 			prometheus: defaultPrometheusSpec,
 		},
@@ -196,7 +197,7 @@ func TestValidateRelabelConfig(t *testing.T) {
 			scenario: "valid replace config with empty replacement",
 			relabelConfig: monitoringv1.RelabelConfig{
 				Action:      "replace",
-				Replacement: new(""),
+				Replacement: ptr.To(""),
 				TargetLabel: "abc",
 			},
 			prometheus: defaultPrometheusSpec,
@@ -350,9 +351,9 @@ func TestValidateRelabelConfig(t *testing.T) {
 			relabelConfig: monitoringv1.RelabelConfig{
 				SourceLabels: []monitoringv1.LabelName{"__tmp_port"},
 				TargetLabel:  "__port1",
-				Separator:    new("^"),
+				Separator:    ptr.To("^"),
 				Regex:        "validregex",
-				Replacement:  new("replacevalue"),
+				Replacement:  ptr.To("replacevalue"),
 				Action:       "keepequal",
 			},
 			prometheus: monitoringv1.Prometheus{
@@ -370,7 +371,7 @@ func TestValidateRelabelConfig(t *testing.T) {
 			relabelConfig: monitoringv1.RelabelConfig{
 				SourceLabels: []monitoringv1.LabelName{"__tmp_port"},
 				TargetLabel:  "__port1",
-				Separator:    new(relabel.DefaultRelabelConfig.Separator),
+				Separator:    ptr.To(relabel.DefaultRelabelConfig.Separator),
 				Regex:        relabel.DefaultRelabelConfig.Regex.String(),
 				Modulus:      relabel.DefaultRelabelConfig.Modulus,
 				Replacement:  &relabel.DefaultRelabelConfig.Replacement,
@@ -383,24 +384,6 @@ func TestValidateRelabelConfig(t *testing.T) {
 					},
 				},
 			},
-		},
-		{
-			scenario: "valid labelmap config with replacement containing template variable",
-			relabelConfig: monitoringv1.RelabelConfig{
-				Action:      "labelmap",
-				Regex:       "^(cluster)$",
-				Replacement: new("exported_${1}"),
-			},
-			prometheus: defaultPrometheusSpec,
-		},
-		{
-			scenario: "valid labelmap config with replacement",
-			relabelConfig: monitoringv1.RelabelConfig{
-				Action:      "labelmap",
-				Regex:       "__meta_kubernetes_(.*)",
-				Replacement: new("k8s_${1}"),
-			},
-			prometheus: defaultPrometheusSpec,
 		},
 	} {
 		t.Run(tc.scenario, func(t *testing.T) {

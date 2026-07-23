@@ -1,6 +1,0 @@
-receivers:
-- name: ""
-  mattermost_configs:
-  - webhook_url: www.test.com
-    author_name: test author
-templates: []

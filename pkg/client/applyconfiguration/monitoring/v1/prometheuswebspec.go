@@ -18,15 +18,10 @@ package v1
 
 // PrometheusWebSpecApplyConfiguration represents a declarative configuration of the PrometheusWebSpec type for use
 // with apply.
-//
-// PrometheusWebSpec defines the configuration of the Prometheus web server.
 type PrometheusWebSpecApplyConfiguration struct {
 	WebConfigFileFieldsApplyConfiguration `json:",inline"`
-	// pageTitle defines the prometheus web page title.
-	PageTitle *string `json:"pageTitle,omitempty"`
-	// maxConnections defines the maximum number of simultaneous connections
-	// A zero value means that Prometheus doesn't accept any incoming connection.
-	MaxConnections *int32 `json:"maxConnections,omitempty"`
+	PageTitle                             *string `json:"pageTitle,omitempty"`
+	MaxConnections                        *int32  `json:"maxConnections,omitempty"`
 }
 
 // PrometheusWebSpecApplyConfiguration constructs a declarative configuration of the PrometheusWebSpec type for use with

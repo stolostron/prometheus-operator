@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2022 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -34,7 +34,7 @@ import (
 	"k8s.io/client-go/util/workqueue"
 	"k8s.io/utils/ptr"
 
-	"github.com/prometheus-operator/prometheus-operator/pkg/k8s"
+	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
 )
 
 // Syncer knows how to synchronize statefulset-based or daemonset-based resources.
@@ -371,9 +371,7 @@ func (rr *ResourceReconciler) objectKey(obj any) (string, bool) {
 	return k, true
 }
 
-// FindOwner returns the resource owning the given object.
-// For example it can return the Prometheus resource owning a StatefulSet.
-func (rr *ResourceReconciler) FindOwner(obj metav1.Object) metav1.Object {
+func (rr *ResourceReconciler) resolve(obj metav1.Object) metav1.Object {
 	for _, or := range obj.GetOwnerReferences() {
 		if !ptr.Deref(or.Controller, false) {
 			continue
@@ -396,7 +394,6 @@ func (rr *ResourceReconciler) FindOwner(obj metav1.Object) metav1.Object {
 		o, err := meta.Accessor(owner)
 		if err != nil {
 			rr.logger.Error("failed to get owner meta", "err", err, "gvk", owner.GetObjectKind().GroupVersionKind().String(), "namespace", obj.GetNamespace(), "name", obj.GetName(), "kind", rr.resourceKind)
-			return nil
 		}
 
 		return o
@@ -470,7 +467,7 @@ func (rr *ResourceReconciler) OnUpdate(old, cur any) {
 		return
 	}
 
-	if !k8s.HasStatusCleanupFinalizer(mCur) && rr.DeletionInProgress(mCur) {
+	if !k8sutil.HasStatusCleanupFinalizer(mCur) && rr.DeletionInProgress(mCur) {
 		return
 	}
 
@@ -516,7 +513,7 @@ func (rr *ResourceReconciler) OnDelete(obj any) {
 }
 
 func (rr *ResourceReconciler) onStatefulSetAdd(ss *appsv1.StatefulSet) {
-	obj := rr.FindOwner(ss)
+	obj := rr.resolve(ss)
 	if obj == nil {
 		return
 	}
@@ -528,7 +525,7 @@ func (rr *ResourceReconciler) onStatefulSetAdd(ss *appsv1.StatefulSet) {
 }
 
 func (rr *ResourceReconciler) onDaemonSetAdd(ds *appsv1.DaemonSet) {
-	obj := rr.FindOwner(ds)
+	obj := rr.resolve(ds)
 	if obj == nil {
 		return
 	}
@@ -549,7 +546,7 @@ func (rr *ResourceReconciler) onStatefulSetUpdate(old, cur *appsv1.StatefulSet) 
 		return
 	}
 
-	obj := rr.FindOwner(cur)
+	obj := rr.resolve(cur)
 	if obj == nil {
 		return
 	}
@@ -579,7 +576,7 @@ func (rr *ResourceReconciler) onDaemonSetUpdate(old, cur *appsv1.DaemonSet) {
 		return
 	}
 
-	obj := rr.FindOwner(cur)
+	obj := rr.resolve(cur)
 	if obj == nil {
 		return
 	}
@@ -598,7 +595,7 @@ func (rr *ResourceReconciler) onDaemonSetUpdate(old, cur *appsv1.DaemonSet) {
 }
 
 func (rr *ResourceReconciler) onStatefulSetDelete(ss *appsv1.StatefulSet) {
-	obj := rr.FindOwner(ss)
+	obj := rr.resolve(ss)
 	if obj == nil {
 		return
 	}
@@ -610,7 +607,7 @@ func (rr *ResourceReconciler) onStatefulSetDelete(ss *appsv1.StatefulSet) {
 }
 
 func (rr *ResourceReconciler) onDaemonSetDelete(ds *appsv1.DaemonSet) {
-	obj := rr.FindOwner(ds)
+	obj := rr.resolve(ds)
 	if obj == nil {
 		return
 	}

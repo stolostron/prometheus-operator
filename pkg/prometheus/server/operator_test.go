@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2017 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -16,19 +16,15 @@ package prometheus
 
 import (
 	"context"
-	"encoding/json"
-	"errors"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/require"
 	appsv1 "k8s.io/api/apps/v1"
-	corev1 "k8s.io/api/core/v1"
+	v1 "k8s.io/api/core/v1"
 	"k8s.io/apimachinery/pkg/api/resource"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	k8sruntime "k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/client-go/kubernetes/fake"
-	clienttesting "k8s.io/client-go/testing"
+	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
@@ -53,9 +49,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				Spec: monitoringv1.PrometheusSpec{
 					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 						Version: "v1.7.0",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("200Mi"),
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("200Mi"),
 							},
 						},
 					},
@@ -68,9 +64,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				Spec: monitoringv1.PrometheusSpec{
 					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 						Version: "v1.7.0",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("100Mi"),
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("100Mi"),
 							},
 						},
 					},
@@ -86,9 +82,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				Spec: monitoringv1.PrometheusSpec{
 					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 						Version: "v1.7.0",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("200Mi"),
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("200Mi"),
 							},
 						},
 					},
@@ -98,9 +94,9 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 				Spec: monitoringv1.PrometheusSpec{
 					CommonPrometheusFields: monitoringv1.CommonPrometheusFields{
 						Version: "v1.7.0",
-						Resources: corev1.ResourceRequirements{
-							Requests: corev1.ResourceList{
-								corev1.ResourceMemory: resource.MustParse("100Mi"),
+						Resources: v1.ResourceRequirements{
+							Requests: v1.ResourceList{
+								v1.ResourceMemory: resource.MustParse("100Mi"),
 							},
 						},
 					},
@@ -219,7 +215,7 @@ func TestCreateStatefulSetInputHash(t *testing.T) {
 
 			require.Equal(t, p1Hash, p2Hash, "expected two Prometheus CRDs to produce the same hash but got different hash")
 
-			p2Hash, err = createSSetInputHash(tc.a, c, []string{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{Replicas: new(int32(2))})
+			p2Hash, err = createSSetInputHash(tc.a, c, []string{}, &operator.ShardedSecret{}, appsv1.StatefulSetSpec{Replicas: ptr.To(int32(2))})
 			require.NoError(t, err)
 
 			require.NotEqual(t, p1Hash, p2Hash, "expected same Prometheus CRDs with different statefulset specs to produce different hashes but got equal hash")
@@ -262,249 +258,63 @@ func TestCreateThanosConfigSecret(t *testing.T) {
 	}
 }
 
-func TestProcessShardRetention(t *testing.T) {
+func TestShouldRetain(t *testing.T) {
 	for _, tc := range []struct {
 		name                     string
 		retentionPoliciesEnabled bool
-		spec                     monitoringv1.PrometheusSpec
-		annotations              map[string]string
-		injectPatchError         bool
-
-		expectedDelete           bool
-		expectedErr              bool
-		expectedPatch            bool
-		expectedDeadlineIsZero   bool
-		expectedDeadlineDuration time.Duration
+		shardRetentionPolicy     *monitoringv1.ShardRetentionPolicy
+		expectedRetain           bool
 	}{
 		{
 			name:                     "feature gate disabled",
 			retentionPoliciesEnabled: false,
-			spec:                     monitoringv1.PrometheusSpec{},
-			expectedDelete:           true,
+			shardRetentionPolicy:     nil,
+			expectedRetain:           false,
 		},
 		{
 			// Regression test: should not panic when ShardRetentionPolicy is nil
 			name:                     "feature gate enabled but ShardRetentionPolicy is nil",
 			retentionPoliciesEnabled: true,
-			spec:                     monitoringv1.PrometheusSpec{},
-			expectedDelete:           true,
+			shardRetentionPolicy:     nil,
+			expectedRetain:           false,
 		},
 		{
 			name:                     "feature gate enabled with empty ShardRetentionPolicy",
 			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{},
-			},
-			expectedDelete: true,
+			shardRetentionPolicy:     &monitoringv1.ShardRetentionPolicy{},
+			expectedRetain:           false,
 		},
 		{
 			name:                     "feature gate enabled with WhenScaled set to Delete",
 			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.DeleteWhenScaledRetentionType),
-				},
+			shardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
+				WhenScaled: ptr.To(monitoringv1.DeleteWhenScaledRetentionType),
 			},
-			expectedDelete: true,
+			expectedRetain: false,
 		},
 		{
-			name:                     "WhenScaled set to Retain and no annotation",
+			name:                     "feature gate enabled with WhenScaled set to Retain",
 			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
+			shardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
+				WhenScaled: ptr.To(monitoringv1.RetainWhenScaledRetentionType),
 			},
-			expectedDelete:           false,
-			expectedPatch:            true,
-			expectedDeadlineDuration: 24 * time.Hour,
-		},
-		{
-			name:                     "WhenScaled set to Retain and deadline in the future",
-			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			annotations:    map[string]string{deletionDeadlineAnnotation: time.Now().UTC().Add(24 * time.Hour).Format(annotationTimeFormat)},
-			expectedDelete: false,
-			expectedPatch:  false,
-		},
-		{
-			name:                     "WhenScaled set to Retain with size-only retention",
-			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				RetentionSize: "10Gi",
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedDelete:         false,
-			expectedPatch:          true,
-			expectedDeadlineIsZero: true,
-		},
-		{
-			name:                     "patch failure returns error",
-			retentionPoliciesEnabled: true,
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			injectPatchError: true,
-			expectedErr:      true,
+			expectedRetain: true,
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			sset := &appsv1.StatefulSet{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:        "prometheus-example",
-					Namespace:   "test",
-					Annotations: tc.annotations,
-				},
-			}
-			if sset.Annotations == nil {
-				sset.Annotations = map[string]string{}
-			}
-			kclient := fake.NewSimpleClientset(sset)
-			if tc.injectPatchError {
-				kclient.Fake.PrependReactor("patch", "statefulsets", func(_ clienttesting.Action) (bool, k8sruntime.Object, error) {
-					return true, nil, errors.New("patch failed")
-				})
-			}
 			o := &Operator{
 				retentionPoliciesEnabled: tc.retentionPoliciesEnabled,
-				kclient:                  kclient,
 			}
 
 			p := &monitoringv1.Prometheus{
-				ObjectMeta: metav1.ObjectMeta{
-					Name:      "example",
-					Namespace: "test",
+				Spec: monitoringv1.PrometheusSpec{
+					ShardRetentionPolicy: tc.shardRetentionPolicy,
 				},
-				Spec: tc.spec,
 			}
 
-			shouldDelete, err := o.processShardRetention(context.Background(), p, sset)
-			if tc.expectedErr {
-				require.Error(t, err)
-				return
-			}
+			retain, err := o.shouldRetain(p)
 			require.NoError(t, err)
-			if tc.expectedDelete {
-				require.True(t, shouldDelete)
-			} else {
-				require.False(t, shouldDelete)
-			}
-
-			if tc.expectedPatch {
-				actions := kclient.Actions()
-				require.Equal(t, 1, len(actions))
-				patchAction, ok := actions[0].(clienttesting.PatchAction)
-				require.True(t, ok)
-
-				if tc.expectedDeadlineIsZero || tc.expectedDeadlineDuration > 0 {
-					var body struct {
-						Metadata struct {
-							Annotations map[string]string `json:"annotations"`
-						} `json:"metadata"`
-					}
-					require.NoError(t, json.Unmarshal(patchAction.GetPatch(), &body))
-					deadline, err := time.Parse(annotationTimeFormat, body.Metadata.Annotations[deletionDeadlineAnnotation])
-					require.NoError(t, err)
-					if tc.expectedDeadlineIsZero {
-						require.True(t, deadline.IsZero(), "expected zero deadline, got %s", deadline)
-					} else {
-						require.WithinDuration(t, time.Now().Add(tc.expectedDeadlineDuration), deadline, 5*time.Second)
-					}
-				}
-			} else {
-				require.Equal(t, 0, len(kclient.Actions()))
-			}
-		})
-	}
-}
-
-func TestGracePeriodForPrometheusStorage(t *testing.T) {
-	for _, tc := range []struct {
-		name             string
-		spec             monitoringv1.PrometheusSpec
-		expectedDuration time.Duration
-		expectedErr      bool
-	}{
-		{
-			name: "empty retention uses default (24h)",
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedDuration: 24 * time.Hour,
-		},
-		{
-			name: "explicit retain retention duration",
-			spec: monitoringv1.PrometheusSpec{
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-					Retain: &monitoringv1.RetainConfig{
-						RetentionPeriod: monitoringv1.Duration("15d"),
-					},
-				},
-			},
-			expectedDuration: 15 * 24 * time.Hour,
-		},
-		{
-			name: "explicit retention duration",
-			spec: monitoringv1.PrometheusSpec{
-				Retention: "15d",
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedDuration: 15 * 24 * time.Hour,
-		},
-		{
-			name: "size-only retention returns zero duration",
-			spec: monitoringv1.PrometheusSpec{
-				RetentionSize: "10Gi",
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedDuration: 0,
-		},
-		{
-			name: "size and time retention uses time-based value",
-			spec: monitoringv1.PrometheusSpec{
-				Retention:     "7d",
-				RetentionSize: "10Gi",
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedDuration: 7 * 24 * time.Hour,
-		},
-		{
-			name: "invalid retention returns error",
-			spec: monitoringv1.PrometheusSpec{
-				Retention: "invalid",
-				ShardRetentionPolicy: &monitoringv1.ShardRetentionPolicy{
-					WhenScaled: new(monitoringv1.RetainWhenScaledRetentionType),
-				},
-			},
-			expectedErr: true,
-		},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			p := &monitoringv1.Prometheus{Spec: tc.spec}
-			d, err := gracePeriodForPrometheusStorage(p)
-			if tc.expectedErr {
-				require.Error(t, err)
-				return
-			}
-			require.NoError(t, err)
-			require.Equal(t, tc.expectedDuration, d)
+			require.Equal(t, tc.expectedRetain, retain)
 		})
 	}
 }

@@ -1,4 +1,4 @@
-// Copyright The prometheus-operator Authors
+// Copyright 2020 The prometheus-operator Authors
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -22,6 +22,7 @@ import (
 	"github.com/prometheus/prometheus/promql/parser"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/util/intstr"
+	"k8s.io/utils/ptr"
 
 	monitoringv1 "github.com/prometheus-operator/prometheus-operator/pkg/apis/monitoring/v1"
 )
@@ -114,7 +115,7 @@ func (l *Labeler) EnforceNamespaceLabel(rule *monitoringv1.PrometheusRule) error
 			rule.Spec.Groups[gi].Rules[ri].Labels[l.enforcedNsLabel] = rule.Namespace
 
 			expr := r.Expr.String()
-			parsedExpr, err := parser.NewParser(parser.Options{}).ParseExpr(expr)
+			parsedExpr, err := parser.ParseExpr(expr)
 			if err != nil {
 				return fmt.Errorf("failed to parse promql expression: %w", err)
 			}
@@ -146,7 +147,7 @@ func (l *Labeler) GetRelabelingConfigs(monitorTypeMeta metav1.TypeMeta, monitorO
 	return append(rc,
 		monitoringv1.RelabelConfig{
 			TargetLabel: l.GetEnforcedNamespaceLabel(),
-			Replacement: new(monitorObjectMeta.GetNamespace()),
+			Replacement: ptr.To(monitorObjectMeta.GetNamespace()),
 		},
 	)
 }
