@@ -42,6 +42,17 @@ import (
 	"github.com/prometheus-operator/prometheus-operator/pkg/operator"
 )
 
+func init() {
+	// github.com/prometheus/common >= v0.62 (pulled in transitively by the
+	// CVE-2026-42151 fix bumping github.com/prometheus/prometheus to
+	// v0.305.3) switched the package-level default from LegacyValidation to
+	// UTF8Validation. Pin it back to Legacy so that CR label/name validation
+	// (e.g. ResourceSelector.validateStaticConfig) keeps rejecting the same
+	// names it rejected before the CVE bump, avoiding an unintended behavior
+	// change as a side effect of a security backport.
+	model.NameValidationScheme = model.LegacyValidation
+}
+
 type ResourceSelector struct {
 	l                  *slog.Logger
 	p                  monitoringv1.PrometheusInterface

@@ -21,6 +21,7 @@ import (
 	"strings"
 
 	"github.com/blang/semver/v4"
+	commonmodel "github.com/prometheus/common/model"
 	"github.com/prometheus/prometheus/model/rulefmt"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -34,6 +35,17 @@ import (
 	"github.com/prometheus-operator/prometheus-operator/pkg/k8sutil"
 	namespacelabeler "github.com/prometheus-operator/prometheus-operator/pkg/namespacelabeler"
 )
+
+func init() {
+	// github.com/prometheus/common >= v0.62 (pulled in transitively by the
+	// CVE-2026-42151 fix bumping github.com/prometheus/prometheus to
+	// v0.305.3) switched the package-level default from LegacyValidation to
+	// UTF8Validation. Pin it back to Legacy so that rulefmt.Parse (used by
+	// ValidateRule) keeps rejecting the same rule label names it rejected
+	// before the CVE bump, avoiding an unintended behavior change as a side
+	// effect of a security backport.
+	commonmodel.NameValidationScheme = commonmodel.LegacyValidation
+}
 
 type RuleConfigurationFormat int
 
@@ -185,7 +197,7 @@ func ValidateRule(promRuleSpec monitoringv1.PrometheusRuleSpec) []error {
 		return []error{fmt.Errorf("the length of rendered Prometheus Rule is %d bytes which is above the maximum limit of %d bytes", promRuleSize, MaxConfigMapDataSize)}
 	}
 
-	_, errs := rulefmt.Parse(content)
+	_, errs := rulefmt.Parse(content, false)
 	return errs
 }
 
