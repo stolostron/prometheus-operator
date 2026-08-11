@@ -25,7 +25,7 @@ require (
 	github.com/prometheus/client_golang v1.23.0
 	github.com/prometheus/common v0.65.0
 	github.com/prometheus/exporter-toolkit v0.14.0
-	github.com/prometheus/prometheus v0.305.0
+	github.com/prometheus/prometheus v0.305.3
 	github.com/stretchr/testify v1.11.1
 	github.com/thanos-io/thanos v0.39.2
 	go.uber.org/automaxprocs v1.6.0
@@ -46,7 +46,6 @@ require (
 )
 
 require (
-	cloud.google.com/go/compute/metadata v0.9.0 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.36.3 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.29.15 // indirect
 	github.com/aws/aws-sdk-go-v2/credentials v1.17.68 // indirect
@@ -80,7 +79,6 @@ require (
 	go.yaml.in/yaml/v2 v2.4.2 // indirect
 	go.yaml.in/yaml/v3 v3.0.4 // indirect
 	golang.org/x/exp v0.0.0-20250620022241-b7579e27df2b // indirect
-	google.golang.org/grpc v1.79.3 // indirect
 	gopkg.in/evanphx/json-patch.v4 v4.12.0 // indirect
 	sigs.k8s.io/randfill v1.0.0 // indirect
 )
