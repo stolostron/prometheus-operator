@@ -19,7 +19,7 @@ ENTRYPOINT ["/bin/operator"]
 
 LABEL com.redhat.component="prometheus-operator" \
   name="rhacm2/acm-prometheus-rhel9" \
-  cpe="cpe:/a:redhat:acm:5.1::el9" \
+  cpe="cpe:/a:redhat:acm:5.0::el9" \
   summary="prometheus-operator" \
   io.openshift.expose-services="" \
   io.openshift.tags="data,images" \
