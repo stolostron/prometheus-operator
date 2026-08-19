@@ -9,7 +9,7 @@ COPY . .
 RUN go mod vendor
 RUN GOFLAGS="" CGO_ENABLED=1 go build -o operator ./cmd/operator/
 
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest
+FROM registry.redhat.io/ubi9/ubi-minimal-pqc:latest
 
 COPY --from=builder /workspace/operator /bin/operator
 
