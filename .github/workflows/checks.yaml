@@ -56,7 +56,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v6.0.1
         with:
-          version: v1.57.2
+          version: v2.13.2
           args: --timeout 10m0s --go ${{ env.golang-version }}
 
   check-metrics:
